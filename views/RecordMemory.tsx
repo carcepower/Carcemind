@@ -19,18 +19,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Intentamos obtener la clave de tu variable específica de Vercel
-  const ACTIVE_API_KEY = (process.env as any).API_KEY_GEMINI || process.env.API_KEY;
-
   const startRecording = async () => {
     if (!googleConfig.isConnected) {
       setStatus('error');
       setErrorMessage('Conecta tu cuenta de Google en Ajustes.');
-      return;
-    }
-    if (!ACTIVE_API_KEY) {
-      setStatus('error');
-      setErrorMessage('No se ha detectado la API_KEY_GEMINI en el sistema.');
       return;
     }
 
@@ -68,7 +60,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      const ai = new GoogleGenAI({ apiKey: ACTIVE_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
         reader.onloadend = () => r((reader.result as string).split(',')[1]);
@@ -97,15 +89,15 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12">
+    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
-        <h2 className="text-4xl font-semibold">Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Usando tu configuración de Vercel ({ACTIVE_API_KEY ? 'Conectado' : 'Desconectado'})</p>
+        <h2 className="text-4xl font-semibold tracking-tight">Ingesta Cognitiva</h2>
+        <p className="text-[#A0A6B1]">Tu voz se procesa en la nube mediante Gemini 3 Flash.</p>
       </div>
 
       <button
         onClick={isRecording ? stopRecording : startRecording}
-        className={`w-40 h-40 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/20 text-red-500 ring-8 ring-red-500/10' : 'bg-[#5E7BFF] text-white shadow-xl shadow-[#5E7BFF44]'}`}
+        className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 ${isRecording ? 'bg-red-500/20 text-red-500 ring-8 ring-red-500/10' : 'bg-[#5E7BFF] text-white shadow-xl shadow-[#5E7BFF44]'}`}
       >
         {isRecording ? <Square fill="currentColor" /> : <Mic className="w-16 h-16" />}
       </button>

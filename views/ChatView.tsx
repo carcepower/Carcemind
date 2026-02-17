@@ -12,14 +12,11 @@ interface ChatViewProps {
 
 const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas mediante tu API_KEY_GEMINI. ¿En qué avanzamos?', timestamp: new Date() }
+    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Usamos tu variable de Vercel
-  const ACTIVE_API_KEY = (process.env as any).API_KEY_GEMINI || process.env.API_KEY;
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -33,7 +30,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: ACTIVE_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Contexto memorias: ${JSON.stringify(memories.slice(0, 5))}\n\nPregunta: ${input}`
@@ -41,7 +38,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Revisa la API_KEY_GEMINI en Vercel.', timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Verifica tu clave API.', timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
