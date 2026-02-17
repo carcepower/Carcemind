@@ -9,7 +9,6 @@ import {
   Unlink, 
   RefreshCw, 
   CheckCircle2, 
-  ShieldCheck,
   AlertCircle,
   Database,
   Lock,
@@ -19,11 +18,7 @@ import {
   ChevronRight,
   LogOut,
   FolderSync,
-  Key,
-  Info,
-  ExternalLink,
-  Sparkles,
-  CreditCard
+  ExternalLink
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -39,50 +34,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
-  const [hasAiKey, setHasAiKey] = useState(false);
-  const [isAiKeyOpening, setIsAiKeyOpening] = useState(false);
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) {
       loadFolders();
     }
-    checkAiKey();
   }, [config.isConnected, config.accessToken]);
-
-  const checkAiKey = async () => {
-    try {
-      const aistudio = (window as any).aistudio;
-      if (aistudio?.hasSelectedApiKey) {
-        const selected = await aistudio.hasSelectedApiKey();
-        setHasAiKey(selected);
-      }
-    } catch (e) {
-      console.warn("Error al verificar clave AI:", e);
-    }
-  };
-
-  const handleSelectAiKey = async () => {
-    setError(null);
-    setIsAiKeyOpening(true);
-    
-    try {
-      const aistudio = (window as any).aistudio;
-      
-      if (aistudio && typeof aistudio.openSelectKey === 'function') {
-        // Intentar abrir el diálogo oficial
-        await aistudio.openSelectKey();
-        // Por las reglas de la plataforma, asumimos éxito inmediatamente tras la llamada
-        setHasAiKey(true);
-        setIsAiKeyOpening(false);
-      } else {
-        throw new Error("El componente 'aistudio' no se encuentra en el objeto window. Asegúrate de estar usando el entorno de desarrollo oficial.");
-      }
-    } catch (e: any) {
-      console.error(e);
-      setError(`Error al abrir selector de claves: ${e.message || "Servicio no disponible"}`);
-      setIsAiKeyOpening(false);
-    }
-  };
 
   const loadFolders = async () => {
     if (!config.accessToken) return;
@@ -195,56 +152,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
         <h2 className="text-4xl font-semibold tracking-tight">Arquitectura del Sistema</h2>
       </header>
 
-      {/* AI Key Selection Card */}
-      <section className="glass border border-[#1F2330] p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden bg-gradient-to-br from-[#5E7BFF]/5 to-transparent">
-        <div className="flex flex-col md:flex-row justify-between items-start gap-8">
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#5E7BFF]/10 flex items-center justify-center border border-[#5E7BFF]/20">
-                <Sparkles className="w-7 h-7 text-[#5E7BFF]" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-medium">Capa de Inteligencia (Gemini)</h3>
-                <p className="text-[#646B7B] text-sm max-w-sm">Vincula una clave de API Gemini 3 Pro con facturación habilitada.</p>
-              </div>
-            </div>
-            
-            {hasAiKey ? (
-              <div className="flex items-center gap-2 text-[#10B981] text-xs font-bold uppercase tracking-widest">
-                <CheckCircle2 className="w-4 h-4" /> Inteligencia Activada
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-amber-500 text-xs font-bold uppercase tracking-widest">
-                <AlertCircle className="w-4 h-4" /> Clave de API pendiente
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 w-full md:w-auto">
-            <button 
-              onClick={handleSelectAiKey}
-              disabled={isAiKeyOpening}
-              className={`w-full md:w-64 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl active:scale-95 ${
-                isAiKeyOpening ? 'bg-[#1F2330] text-[#646B7B] animate-pulse' :
-                hasAiKey ? 'bg-[#151823] text-[#A0A6B1] border border-[#1F2330]' : 'bg-[#5E7BFF] text-white hover:shadow-[#5E7BFF44]'
-              }`}
-            >
-              {isAiKeyOpening ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Key className="w-5 h-5" />}
-              {isAiKeyOpening ? 'Abriendo Selector...' : hasAiKey ? 'Actualizar Clave AI' : 'Seleccionar Clave Gemini'}
-            </button>
-            <div className="flex flex-col gap-1 items-center">
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                className="text-[10px] text-center text-[#646B7B] uppercase font-bold hover:text-[#5E7BFF] transition-colors"
-              >
-                Docs Facturación <ExternalLink className="w-2.5 h-2.5 inline ml-1" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Data Layer Card */}
       <section className="glass border border-[#1F2330] p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden space-y-10">
         <div className="flex flex-col md:flex-row justify-between items-start gap-8">
@@ -255,7 +162,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               </div>
               <div>
                 <h3 className="text-2xl font-medium">Capa de Datos (Drive/Sheets)</h3>
-                <p className="text-[#646B7B] text-sm">Gestiona dónde se guardan tus audios y memorias.</p>
+                <p className="text-[#646B7B] text-sm">Gestiona dónde se guardan tus audios y memorias estructuradas.</p>
               </div>
             </div>
 

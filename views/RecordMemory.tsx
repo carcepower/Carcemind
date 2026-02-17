@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown, Key } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -116,14 +116,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       return;
     }
 
-    // MANDATORY: Check if AI Key is selected
-    const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
-    if (!hasKey) {
-      setStatus('error');
-      setErrorMessage('Falta configurar la Capa de Inteligencia. Por favor, selecciona tu clave de API Gemini.');
-      return;
-    }
-
     setStatus('uploading');
     const token = googleConfig.accessToken!;
     const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
@@ -133,7 +125,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(token, blob, fileName, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      // Always create a fresh instance of GoogleGenAI
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const base64Audio = await new Promise<string>((resolve) => {
@@ -148,7 +139,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       5. Tareas derivadas con prioridad. 6. Snippets/Bullets de datos clave.`;
 
       const result = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: [
           { parts: [{ inlineData: { data: base64Audio, mimeType: geminiMime } }, { text: prompt }] }
         ],
@@ -212,15 +203,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       console.error(err);
       setStatus('error');
       setErrorMessage(err.message?.includes('API Key') 
-        ? 'Error de Clave AI: No se ha detectado una clave válida. Ve a Ajustes > Capa de Inteligencia.' 
+        ? 'Error de Inteligencia: No se ha detectado una clave válida en el entorno.' 
         : `Fallo Neuronal: ${err.message}`);
-    }
-  };
-
-  const handleOpenKeySelector = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setStatus('idle');
     }
   };
 
@@ -229,7 +213,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Capa de Ingesta Cognitiva</h2>
         <p className="text-[#A0A6B1] max-w-md mx-auto leading-relaxed">
-          Estructurando tus pensamientos con <strong>Gemini 3 Pro</strong>.
+          Tu voz se almacena en <strong>Drive</strong> y se estructura en <strong>Sheets</strong> con Gemini 3 Flash.
         </p>
       </div>
 
@@ -272,7 +256,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
               <Loader2 className="w-10 h-10 animate-spin text-[#5E7BFF] mx-auto" />
               <p className="text-sm font-bold uppercase tracking-widest text-[#5E7BFF]">
                 {status === 'uploading' && 'Guardando en Drive...'}
-                {status === 'processing' && 'Analizando con Gemini 3 Pro...'}
+                {status === 'processing' && 'Analizando con Gemini 3 Flash...'}
                 {status === 'structuring' && 'Estructurando en Sheets...'}
               </p>
             </div>
@@ -290,17 +274,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             <div className="space-y-6 text-red-400">
               <AlertCircle className="w-10 h-10 mx-auto" />
               <p className="text-sm font-medium px-8">{errorMessage}</p>
-              
-              {errorMessage.includes('Capa de Inteligencia') ? (
-                <button 
-                  onClick={handleOpenKeySelector}
-                  className="px-8 py-3 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
-                >
-                  Configurar Clave Ahora
-                </button>
-              ) : (
-                <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest">Reintentar</button>
-              )}
+              <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest">Reintentar</button>
             </div>
           )}
 

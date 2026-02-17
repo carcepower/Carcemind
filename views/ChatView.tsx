@@ -41,7 +41,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
       // 1. INTENT CLASSIFICATION
       setCurrentProcess('Clasificando intención...');
       const intentResult = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: `Analiza la intención de Pablo: "${currentInput}". Responde en JSON: { "intent": "tasks" | "recent_memories" | "search" | "general", "query": "string" }`,
         config: { responseMimeType: 'application/json' }
       });
@@ -73,7 +73,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
       // 3. FINAL RESPONSE GENERATION (TONO PABLO)
       setCurrentProcess('Generando respuesta estratégica...');
       const finalResult = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: `Eres CarceMind, el asistente ejecutivo de Pablo.
         TONO: Español de España, natural, directo, práctico, ejecutivo.
         CONTEXTO: ${context}
@@ -106,7 +106,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
           </div>
           <div>
             <h2 className="text-2xl font-semibold">Consultor CarceMind</h2>
-            <p className="text-sm text-[#A0A6B1]">Capa RAG activada • Gemini 3 Pro</p>
+            <p className="text-sm text-[#A0A6B1]">Capa RAG activada • Gemini 3 Flash</p>
           </div>
         </div>
       </header>
