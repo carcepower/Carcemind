@@ -8,13 +8,22 @@ export const googleApi = {
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
-    return fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers });
+    
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      console.error(`Google API Error [${response.status}]:`, errData);
+      throw new Error(errData.error?.message || `Error en la petición a Google API (${response.status})`);
+    }
+    
+    return response;
   },
 
   async listFolders(token: string) {
+    // Consulta para listar carpetas (mimeType de folder) que no estén en la papelera
     const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     const response = await this.fetchWithAuth(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)&pageSize=100`,
       token
     );
     const data = await response.json();
