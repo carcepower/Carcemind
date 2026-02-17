@@ -1,4 +1,4 @@
-// test deploy
+
 import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
@@ -47,12 +47,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const loadFolders = async () => {
     if (!config.accessToken) return;
     setLoadingFolders(true);
+    setError(null);
     try {
       const list = await googleApi.listFolders(config.accessToken);
       setFolders(list);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError("Error al sincronizar con Google Drive.");
+      setError("No se pudieron listar las carpetas. ¿Has aceptado todos los permisos?");
     } finally {
       setLoadingFolders(false);
     }
@@ -63,8 +64,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
-        prompt: promptMode, // Ahora por defecto es 'select_account' para evitar interaction_required
+        // Añadido scope metadata.readonly para poder listar carpetas existentes
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+        prompt: promptMode,
         callback: (response: any) => {
           if (response.access_token) {
             fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -117,6 +119,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const createCarceMindFolder = async () => {
     if (!config.accessToken) return;
     setIsSyncing(true);
+    setError(null);
     try {
       const folder = await googleApi.createFolder(config.accessToken, 'CarceMind_Vault');
       selectFolder('audio', folder.id, 'CarceMind_Vault');
@@ -132,11 +135,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const ensureSpreadsheet = async () => {
     if (!config.accessToken || !config.sheetFolderId) return;
     setIsSyncing(true);
+    setError(null);
     try {
       const ssId = await googleApi.createSpreadsheet(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
       setConfig(prev => ({ ...prev, spreadsheetId: ssId }));
     } catch (e) {
-      setError("Error al crear el índice en Sheets.");
+      setError("Error al crear el índice en Sheets. Asegúrate de tener permisos de escritura.");
     } finally {
       setIsSyncing(false);
     }
