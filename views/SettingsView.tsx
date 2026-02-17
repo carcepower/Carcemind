@@ -11,9 +11,7 @@ import {
   LogOut,
   Brain,
   Zap,
-  CheckCircle2,
-  ExternalLink,
-  Key
+  ExternalLink
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -29,37 +27,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
-  const [isAiReady, setIsAiReady] = useState(false);
-  const [showSelectorButton, setShowSelectorButton] = useState(false);
 
   useEffect(() => {
-    checkAiStatus();
     if (config.isConnected && config.accessToken) {
       loadFolders();
     }
   }, [config.isConnected, config.accessToken]);
-
-  const checkAiStatus = async () => {
-    // 1. Comprobar si la clave ya está inyectada (Entorno Real)
-    const hasEnvKey = !!process.env.API_KEY;
-    
-    // 2. Comprobar si estamos en entorno de pruebas con selector disponible
-    const hasSelector = !!(window as any).aistudio?.openSelectKey;
-    
-    setIsAiReady(hasEnvKey);
-    setShowSelectorButton(hasSelector && !hasEnvKey);
-  };
-
-  const handleOpenAiSelector = async () => {
-    try {
-      if ((window as any).aistudio?.openSelectKey) {
-        await (window as any).aistudio.openSelectKey();
-        setIsAiReady(true);
-      }
-    } catch (e: any) {
-      setError(`Error al abrir selector: ${e.message}`);
-    }
-  };
 
   const handleSessionExpired = () => {
     setConfig({
@@ -206,29 +179,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               </div>
             </div>
             
-            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest ${isAiReady ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-              {isAiReady ? <Zap className="w-3 h-3 fill-current" /> : <AlertCircle className="w-3 h-3" />}
-              {isAiReady ? 'IA Activada y Lista' : 'IA Esperando Configuración'}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+              <Zap className="w-3 h-3 fill-current" />
+              IA Lista y Gestionada
             </div>
           </div>
-
-          {showSelectorButton && (
-            <button 
-              onClick={handleOpenAiSelector}
-              className="w-full md:w-64 py-5 rounded-2xl bg-[#5E7BFF] text-white font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl shadow-[#5E7BFF33]"
-            >
-              <Key className="w-5 h-5" />
-              Vincular Motor IA
-            </button>
-          )}
         </div>
         
         <p className="text-[10px] text-[#646B7B] leading-relaxed">
-          {isAiReady 
-            ? "El Motor Neuronal está operando correctamente con la clave inyectada por el entorno."
-            : "Para que CarceMind funcione, el entorno debe proporcionar una clave de API válida de Gemini."}
+          El Motor Neuronal está configurado automáticamente por CarceMind Cloud. 
+          No se requiere acción manual para la vinculación del modelo Gemini 3 Flash.
           <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[#5E7BFF] ml-1 flex inline-flex items-center gap-1 hover:underline">
-            Ver documentación de facturación <ExternalLink className="w-2 h-2" />
+            Info de Facturación <ExternalLink className="w-2 h-2" />
           </a>
         </p>
       </section>

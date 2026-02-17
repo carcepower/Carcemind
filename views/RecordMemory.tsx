@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown, Key } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -14,11 +14,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState<'idle' | 'recording' | 'processing' | 'uploading' | 'structuring' | 'finished' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [resultData, setResultData] = useState<any>(null);
   
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [showDeviceSelector, setShowDeviceSelector] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -48,18 +46,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     initDevices();
   }, []);
 
-  const handleOpenAiSelector = async () => {
-    try {
-      if ((window as any).aistudio?.openSelectKey) {
-        await (window as any).aistudio.openSelectKey();
-        setStatus('idle');
-        setErrorMessage('');
-      }
-    } catch (e) {}
-  };
-
   const startRecording = async () => {
-    // Validación de Google
     if (!googleConfig.isConnected || !googleConfig.accessToken) {
       setStatus('error');
       setErrorMessage('Por favor, conecta tu cuenta de Google en Ajustes.');
@@ -118,7 +105,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(token, blob, fileName, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      // Crear instancia usando la clave inyectada por el entorno
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const base64Audio = await new Promise<string>((resolve) => {
@@ -137,7 +123,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       });
 
       const structuredData = JSON.parse(result.text);
-      setResultData(structuredData);
 
       setStatus('structuring');
       const entryId = crypto.randomUUID();
@@ -162,8 +147,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       console.error("Error en proceso neuronal:", err);
       setStatus('error');
       
-      if (err.message?.includes('API Key') || err.message?.includes('key')) {
-        setErrorMessage("Falta la clave de API de Gemini en el entorno.");
+      if (err.message?.includes('API Key') || err.message?.includes('key') || err.message?.includes('401')) {
+        setErrorMessage("Error de autenticación neuronal. Contacta con soporte.");
       } else if (err.message.includes("SESSION_EXPIRED")) {
         setErrorMessage("Tu sesión de Google ha expirado. Ve a Ajustes y reconecta.");
       } else {
@@ -212,16 +197,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             <div className="space-y-6 text-red-400">
               <AlertCircle className="w-10 h-10 mx-auto" />
               <p className="text-sm font-medium px-10 leading-relaxed">{errorMessage}</p>
-              
-              {errorMessage.includes('clave') && (window as any).aistudio?.openSelectKey && (
-                <button 
-                  onClick={handleOpenAiSelector}
-                  className="px-6 py-3 rounded-xl bg-white text-black font-bold text-xs uppercase tracking-widest flex items-center gap-2 mx-auto hover:scale-105 transition-all"
-                >
-                  <Key className="w-4 h-4" /> Vincular IA ahora
-                </button>
-              )}
-              
               <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest block mx-auto">Reintentar</button>
             </div>
           )}
