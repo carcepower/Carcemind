@@ -18,7 +18,8 @@ import {
   UserCircle2,
   ChevronRight,
   LogOut,
-  FolderSync
+  FolderSync,
+  Key
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -53,18 +54,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       setFolders(list);
     } catch (e: any) {
       console.error(e);
-      setError("No se pudieron listar las carpetas. ¿Has aceptado todos los permisos?");
+      setError("Faltan permisos de lectura. Pulsa 'Recalibrar Permisos' para solucionarlo.");
     } finally {
       setLoadingFolders(false);
     }
   };
 
-  const handleConnect = (promptMode: 'select_account' | 'consent' | '' = 'select_account') => {
+  const handleConnect = (promptMode: string = 'select_account') => {
     setError(null);
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        // Añadido scope metadata.readonly para poder listar carpetas existentes
         scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
         prompt: promptMode,
         callback: (response: any) => {
@@ -94,6 +94,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   };
 
   const handleDisconnect = () => {
+    // Intentar revocar el token en Google para una limpieza real
+    if (config.accessToken) {
+      try {
+        (window as any).google.accounts.oauth2.revoke(config.accessToken, () => {
+          console.log('Token revocado en Google');
+        });
+      } catch (e) {
+        console.error('Error revocando token:', e);
+      }
+    }
+
     setConfig({
       isConnected: false,
       accessToken: null,
@@ -154,9 +165,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       </header>
 
       {error && (
-        <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4 animate-in slide-in-from-top-2">
-          <AlertCircle className="w-6 h-6 shrink-0" />
-          <p className="text-sm font-medium">{error}</p>
+        <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-4">
+            <AlertCircle className="w-6 h-6 shrink-0" />
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+          <button 
+            onClick={() => handleConnect('consent select_account')}
+            className="px-6 py-3 rounded-2xl bg-red-500 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 whitespace-nowrap shadow-lg shadow-red-500/20"
+          >
+            <Key className="w-4 h-4" />
+            Recalibrar Permisos
+          </button>
         </div>
       )}
 
@@ -190,7 +210,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
           <div className="flex flex-col gap-3 w-full md:w-auto">
             {!config.isConnected ? (
               <button 
-                onClick={() => handleConnect()}
+                onClick={() => handleConnect('consent select_account')}
                 className="w-full md:w-64 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all active:scale-[0.98] shadow-xl"
               >
                 <ShieldCheck className="w-5 h-5" />
@@ -199,7 +219,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
             ) : (
               <div className="flex flex-col gap-3">
                 <button 
-                  onClick={() => handleConnect('select_account')}
+                  onClick={() => handleConnect('consent select_account')}
                   className="w-full md:w-64 px-6 py-4 rounded-2xl bg-[#151823] border border-[#1F2330] text-[#A0A6B1] font-bold text-xs uppercase tracking-widest hover:text-white hover:border-[#5E7BFF] transition-all flex items-center justify-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
