@@ -40,6 +40,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
   const [hasAiKey, setHasAiKey] = useState(false);
+  const [isAiKeyOpening, setIsAiKeyOpening] = useState(false);
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) {
@@ -49,16 +50,37 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   }, [config.isConnected, config.accessToken]);
 
   const checkAiKey = async () => {
-    if ((window as any).aistudio?.hasSelectedApiKey) {
-      const selected = await (window as any).aistudio.hasSelectedApiKey();
-      setHasAiKey(selected);
+    try {
+      const aistudio = (window as any).aistudio;
+      if (aistudio?.hasSelectedApiKey) {
+        const selected = await aistudio.hasSelectedApiKey();
+        setHasAiKey(selected);
+      }
+    } catch (e) {
+      console.warn("Error al verificar clave AI:", e);
     }
   };
 
   const handleSelectAiKey = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setHasAiKey(true);
+    setError(null);
+    setIsAiKeyOpening(true);
+    
+    try {
+      const aistudio = (window as any).aistudio;
+      
+      if (aistudio && typeof aistudio.openSelectKey === 'function') {
+        // Intentar abrir el diálogo oficial
+        await aistudio.openSelectKey();
+        // Por las reglas de la plataforma, asumimos éxito inmediatamente tras la llamada
+        setHasAiKey(true);
+        setIsAiKeyOpening(false);
+      } else {
+        throw new Error("El componente 'aistudio' no se encuentra en el objeto window. Asegúrate de estar usando el entorno de desarrollo oficial.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setError(`Error al abrir selector de claves: ${e.message || "Servicio no disponible"}`);
+      setIsAiKeyOpening(false);
     }
   };
 
@@ -183,7 +205,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               </div>
               <div>
                 <h3 className="text-2xl font-medium">Capa de Inteligencia (Gemini)</h3>
-                <p className="text-[#646B7B] text-sm max-w-sm">Para usar Gemini 3 Pro, Google requiere vincular una clave de API de un proyecto con facturación.</p>
+                <p className="text-[#646B7B] text-sm max-w-sm">Vincula una clave de API Gemini 3 Pro con facturación habilitada.</p>
               </div>
             </div>
             
@@ -201,20 +223,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
           <div className="flex flex-col gap-3 w-full md:w-auto">
             <button 
               onClick={handleSelectAiKey}
-              className={`w-full md:w-64 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl ${
-                hasAiKey ? 'bg-[#151823] text-[#A0A6B1] border border-[#1F2330]' : 'bg-[#5E7BFF] text-white hover:scale-[1.02]'
+              disabled={isAiKeyOpening}
+              className={`w-full md:w-64 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl active:scale-95 ${
+                isAiKeyOpening ? 'bg-[#1F2330] text-[#646B7B] animate-pulse' :
+                hasAiKey ? 'bg-[#151823] text-[#A0A6B1] border border-[#1F2330]' : 'bg-[#5E7BFF] text-white hover:shadow-[#5E7BFF44]'
               }`}
             >
-              <Key className="w-5 h-5" />
-              {hasAiKey ? 'Actualizar Clave AI' : 'Seleccionar Clave Gemini'}
+              {isAiKeyOpening ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Key className="w-5 h-5" />}
+              {isAiKeyOpening ? 'Abriendo Selector...' : hasAiKey ? 'Actualizar Clave AI' : 'Seleccionar Clave Gemini'}
             </button>
-            <a 
-              href="https://ai.google.dev/gemini-api/docs/billing" 
-              target="_blank" 
-              className="text-[10px] text-center text-[#646B7B] uppercase font-bold hover:text-[#5E7BFF] transition-colors"
-            >
-              Ver docs de facturación de Google <ExternalLink className="w-3 h-3 inline ml-1" />
-            </a>
+            <div className="flex flex-col gap-1 items-center">
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/billing" 
+                target="_blank" 
+                className="text-[10px] text-center text-[#646B7B] uppercase font-bold hover:text-[#5E7BFF] transition-colors"
+              >
+                Docs Facturación <ExternalLink className="w-2.5 h-2.5 inline ml-1" />
+              </a>
+            </div>
           </div>
         </div>
       </section>
@@ -250,7 +276,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
             {!config.isConnected ? (
               <button 
                 onClick={() => handleConnect('consent select_account')}
-                className="w-full md:w-64 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+                className="w-full md:w-64 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl"
               >
                 <Chrome className="w-5 h-5" />
                 Conectar Google
@@ -333,7 +359,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       </section>
 
       {error && (
-        <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4">
+        <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4 animate-in slide-in-from-top-2">
           <AlertCircle className="w-6 h-6 shrink-0" />
           <p className="text-sm font-medium">{error}</p>
         </div>

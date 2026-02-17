@@ -35,13 +35,13 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const token = googleConfig.accessToken;
 
       // 1. INTENT CLASSIFICATION
       setCurrentProcess('Clasificando intención...');
       const intentResult = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3-pro-preview',
         contents: `Analiza la intención de Pablo: "${currentInput}". Responde en JSON: { "intent": "tasks" | "recent_memories" | "search" | "general", "query": "string" }`,
         config: { responseMimeType: 'application/json' }
       });
@@ -59,7 +59,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         } else if (intent === 'recent_memories' || intent === 'search') {
           setCurrentProcess('Recuperando fragmentos relevantes...');
           const entriesRows = await googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', token);
-          // Simple retrieval: last 15 entries for "recent", or keyword search for "search"
           const entries = entriesRows.slice(1).reverse();
           const filtered = intent === 'search' 
             ? entries.filter((e: any) => e[2].toLowerCase().includes(query.toLowerCase()) || e[3].toLowerCase().includes(query.toLowerCase()) || e[8].toLowerCase().includes(query.toLowerCase())).slice(0, 5)
@@ -75,15 +74,10 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
       setCurrentProcess('Generando respuesta estratégica...');
       const finalResult = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: `Eres CarceMind, el clon cognitivo y asistente ejecutivo de Pablo.
-        TONO: Español de España, natural, directo, práctico, ejecutivo, con sutil humor si encaja. Sin relleno.
-        CONTEXTO RECUPERADO DE MEMORIA ESTRUCTURADA:
-        ---
-        ${context}
-        ---
-        USUARIO PREGUNTA: "${currentInput}"
-        
-        Responde basándote en el contexto. Si no hay información suficiente, dilo con honestidad. Propón próximos pasos si aplica.`,
+        contents: `Eres CarceMind, el asistente ejecutivo de Pablo.
+        TONO: Español de España, natural, directo, práctico, ejecutivo.
+        CONTEXTO: ${context}
+        USUARIO PREGUNTA: "${currentInput}"`,
         config: { temperature: 0.7 }
       });
 
@@ -112,15 +106,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
           </div>
           <div>
             <h2 className="text-2xl font-semibold">Consultor CarceMind</h2>
-            <p className="text-sm text-[#A0A6B1]">Capa RAG activada • Memoria 2 Capas</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <div className="p-2 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B]" title="Búsqueda Estructurada">
-             <ListTodo className="w-4 h-4" />
-          </div>
-          <div className="p-2 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B]" title="Búsqueda Semántica">
-             <History className="w-4 h-4" />
+            <p className="text-sm text-[#A0A6B1]">Capa RAG activada • Gemini 3 Pro</p>
           </div>
         </div>
       </header>
@@ -173,14 +159,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
           >
             <Send className="w-6 h-6" />
           </button>
-        </div>
-        <div className="flex justify-center gap-6 mt-5 opacity-40">
-           <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-widest font-bold">
-             <Search className="w-3 h-3" /> Búsqueda por intención
-           </div>
-           <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-widest font-bold">
-             <BrainCircuit className="w-3 h-3" /> Recuperación Estructurada
-           </div>
         </div>
       </div>
     </div>
