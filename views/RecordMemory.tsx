@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown, Key } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -25,9 +25,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Detect supported MIME types
   const getSupportedMimeType = () => {
-    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac'];
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
     for (const type of types) {
       if (MediaRecorder.isTypeSupported(type)) return type;
     }
@@ -37,17 +36,14 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   useEffect(() => {
     const initDevices = async () => {
       try {
-        // Request temporary permission to get labels
         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
         setDevices(audioInputs);
         
-        // Try to auto-select "Built-in" or "Internal" to avoid Continuity Mic (iPhone)
         const preferred = audioInputs.find(d => 
           d.label.toLowerCase().includes('built-in') || 
-          d.label.toLowerCase().includes('interno') ||
-          d.label.toLowerCase().includes('default')
+          d.label.toLowerCase().includes('interno')
         );
         
         if (preferred) {
@@ -88,18 +84,16 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
         if (finalBlob.size === 0) {
           setStatus('error');
-          setErrorMessage('El audio capturado está vacío. Revisa los permisos de tu micrófono.');
+          setErrorMessage('El audio capturado está vacío.');
           return;
         }
         processAudio(finalBlob, mimeType);
       };
 
-      // Request data every 1 second to ensure chunks are captured
       mediaRecorder.start(1000);
       setIsRecording(true);
       setStatus('recording');
     } catch (err: any) {
-      console.error(err);
       setStatus('error');
       setErrorMessage(err.message || 'No se pudo acceder al micrófono.');
     }
@@ -116,24 +110,31 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   };
 
   const processAudio = async (blob: Blob, mimeType: string) => {
-    if (!googleConfig.isConnected || !googleConfig.audioFolderId || !googleConfig.spreadsheetId) {
+    if (!googleConfig.isConnected || !googleConfig.spreadsheetId) {
       setStatus('error');
-      setErrorMessage('Configura Google Drive y Sheets en Ajustes primero.');
+      setErrorMessage('Vincula tu cuenta de Google en Ajustes primero.');
+      return;
+    }
+
+    // MANDATORY: Check if AI Key is selected
+    const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
+    if (!hasKey) {
+      setStatus('error');
+      setErrorMessage('Falta configurar la Capa de Inteligencia. Por favor, selecciona tu clave de API Gemini.');
       return;
     }
 
     setStatus('uploading');
     const token = googleConfig.accessToken!;
-    const extension = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('webm') ? 'webm' : 'ogg';
+    const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
     const fileName = `CarceMind_Memory_${new Date().toISOString()}.${extension}`;
 
     try {
-      // 1. Upload to Drive
       const driveFile = await googleApi.uploadFile(token, blob, fileName, googleConfig.audioFolderId!);
       
-      // 2. Transcribe and Structure with Gemini
       setStatus('processing');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      // Always create a fresh instance of GoogleGenAI
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const base64Audio = await new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -141,20 +142,13 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         reader.readAsDataURL(blob);
       });
 
-      // Gemini 2.5 is very flexible but we must be precise with the MIME type
-      const geminiMime = mimeType.split(';')[0]; // Remove codecs for Gemini
-
-      const prompt = `Actúa como CarceMind, el cerebro externo de Pablo. 
-      Analiza este audio y genera un JSON estructurado con estas claves:
-      - title: Un título ejecutivo corto.
-      - summary: Un resumen de máximo 5 líneas.
-      - emotionalState: Un tag emocional (ej: enfocado, estresado, creativo).
-      - tags: Lista de 3-8 tags.
-      - tasks: Lista de objetos { description, priority (low/medium/high), deadline (ISO string o null) }.
-      - snippets: Lista de 3-8 bullets cortos con hechos clave.`;
+      const geminiMime = mimeType.split(';')[0];
+      const prompt = `Analiza este pensamiento vocal de Pablo. Extrae: 
+      1. Título ejecutivo. 2. Resumen narrativo. 3. Estado emocional. 4. Tags de búsqueda. 
+      5. Tareas derivadas con prioridad. 6. Snippets/Bullets de datos clave.`;
 
       const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-3-pro-preview',
         contents: [
           { parts: [{ inlineData: { data: base64Audio, mimeType: geminiMime } }, { text: prompt }] }
         ],
@@ -188,32 +182,20 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const structuredData = JSON.parse(result.text);
       setResultData(structuredData);
 
-      // 3. Update Sheets
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
 
       await googleApi.appendRow(googleConfig.spreadsheetId, 'ENTRADAS', [
-        entryId,
-        timestamp,
-        structuredData.title,
-        structuredData.summary,
-        structuredData.emotionalState,
-        structuredData.tags.join(', '),
-        driveFile.id,
-        driveFile.webViewLink,
-        structuredData.snippets.join(' | ')
+        entryId, timestamp, structuredData.title, structuredData.summary, 
+        structuredData.emotionalState, structuredData.tags.join(', '), 
+        driveFile.id, driveFile.webViewLink, structuredData.snippets.join(' | ')
       ], token);
 
       for (const task of structuredData.tasks) {
         await googleApi.appendRow(googleConfig.spreadsheetId, 'TAREAS', [
-          crypto.randomUUID(),
-          timestamp,
-          task.description,
-          task.priority || 'medium',
-          'pending',
-          entryId,
-          task.deadline || ''
+          crypto.randomUUID(), timestamp, task.description, task.priority, 
+          'pending', entryId, task.deadline || ''
         ], token);
       }
 
@@ -222,7 +204,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         id: entryId,
         title: structuredData.title,
         excerpt: structuredData.summary,
-        content: structuredData.summary,
         timestamp: new Date(),
         emotionalTag: structuredData.emotionalState,
         type: 'voice'
@@ -230,16 +211,25 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     } catch (err: any) {
       console.error(err);
       setStatus('error');
-      setErrorMessage(`Error Neuronal: ${err.message || 'Error desconocido'}`);
+      setErrorMessage(err.message?.includes('API Key') 
+        ? 'Error de Clave AI: No se ha detectado una clave válida. Ve a Ajustes > Capa de Inteligencia.' 
+        : `Fallo Neuronal: ${err.message}`);
+    }
+  };
+
+  const handleOpenKeySelector = async () => {
+    if ((window as any).aistudio?.openSelectKey) {
+      await (window as any).aistudio.openSelectKey();
+      setStatus('idle');
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in zoom-in-95 duration-500">
+    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Capa de Ingesta Cognitiva</h2>
         <p className="text-[#A0A6B1] max-w-md mx-auto leading-relaxed">
-          Tu voz se almacena en <strong>Drive</strong> y se estructura en <strong>Sheets</strong> con Gemini 2.5.
+          Estructurando tus pensamientos con <strong>Gemini 3 Pro</strong>.
         </p>
       </div>
 
@@ -252,7 +242,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
               className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 transform active:scale-95 shadow-2xl relative z-10 ${
                 isRecording 
                   ? 'bg-red-500/20 text-red-500 border-red-500/30 ring-[12px] ring-red-500/10' 
-                  : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF33] hover:shadow-[#5E7BFF55]'
+                  : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF33]'
               }`}
             >
               {isRecording ? <Square fill="currentColor" className="w-10 h-10" /> : <Mic className="w-16 h-16" />}
@@ -260,86 +250,57 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             {isRecording && <div className="absolute inset-0 rounded-full bg-[#8A6CFF] animate-ping opacity-20 -z-10" />}
           </div>
 
-          {/* Device Selector */}
-          {!isRecording && status === 'idle' && devices.length > 1 && (
-            <div className="relative">
+          {!isRecording && status === 'idle' && (
+            <div className="flex gap-4">
               <button 
                 onClick={() => setShowDeviceSelector(!showDeviceSelector)}
                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#151823] border border-[#1F2330] text-[#646B7B] text-[10px] font-bold uppercase tracking-widest hover:border-[#5E7BFF] transition-all"
               >
                 <Settings className="w-3 h-3" />
-                {devices.find(d => d.deviceId === selectedDeviceId)?.label || 'Seleccionar Micrófono'}
+                {devices.find(d => d.deviceId === selectedDeviceId)?.label || 'Micrófono'}
                 <ChevronDown className="w-3 h-3" />
               </button>
-              
-              {showDeviceSelector && (
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 bg-[#151823] border border-[#1F2330] rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2">
-                  {devices.map(device => (
-                    <button
-                      key={device.deviceId}
-                      onClick={() => {
-                        setSelectedDeviceId(device.deviceId);
-                        setShowDeviceSelector(false);
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-tight transition-all ${
-                        selectedDeviceId === device.deviceId ? 'bg-[#5E7BFF] text-white' : 'text-[#646B7B] hover:bg-white/5'
-                      }`}
-                    >
-                      {device.label || `Micrófono ${device.deviceId.slice(0, 5)}`}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
 
         <div className="w-full max-w-2xl glass p-10 rounded-[3rem] border border-[#1F2330] min-h-[220px] flex flex-col items-center justify-center text-center shadow-2xl space-y-6">
-          {status === 'recording' && (
-            <div className="space-y-2">
-              <p className="text-sm font-bold tracking-widest uppercase text-red-500 animate-pulse">Capturando Pensamiento...</p>
-              <p className="text-[#646B7B] text-xs">Exprésate libremente, CarceMind estructura el caos.</p>
-            </div>
-          )}
+          {status === 'recording' && <p className="text-sm font-bold tracking-widest uppercase text-red-500 animate-pulse">Capturando Pensamiento...</p>}
           
           {['uploading', 'processing', 'structuring'].includes(status) && (
             <div className="space-y-6">
-              <div className="flex justify-center">
-                <Loader2 className="w-10 h-10 animate-spin text-[#5E7BFF]" />
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-bold uppercase tracking-widest text-[#5E7BFF]">
-                  {status === 'uploading' && 'Subiendo a Google Drive...'}
-                  {status === 'processing' && 'Transcribiendo con Gemini...'}
-                  {status === 'structuring' && 'Actualizando Memoria Estructurada (Sheets)...'}
-                </p>
-                <div className="w-48 h-1 bg-[#1F2330] rounded-full mx-auto overflow-hidden">
-                   <div className="h-full bg-[#5E7BFF] animate-progress" />
-                </div>
-              </div>
+              <Loader2 className="w-10 h-10 animate-spin text-[#5E7BFF] mx-auto" />
+              <p className="text-sm font-bold uppercase tracking-widest text-[#5E7BFF]">
+                {status === 'uploading' && 'Guardando en Drive...'}
+                {status === 'processing' && 'Analizando con Gemini 3 Pro...'}
+                {status === 'structuring' && 'Estructurando en Sheets...'}
+              </p>
             </div>
           )}
 
           {status === 'finished' && resultData && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-top-4">
-              <div className="flex flex-col items-center gap-2">
-                <CheckCircle2 className="w-10 h-10 text-[#10B981]" />
-                <h4 className="text-xl font-medium">{resultData.title}</h4>
-              </div>
-              <p className="text-[#A0A6B1] text-sm italic leading-relaxed">"{resultData.summary}"</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {resultData.tags.map((t: string) => (
-                  <span key={t} className="px-3 py-1 rounded-full bg-[#1F2330] text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">#{t}</span>
-                ))}
-              </div>
+            <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
+              <CheckCircle2 className="w-10 h-10 text-[#10B981] mx-auto" />
+              <h4 className="text-xl font-medium">{resultData.title}</h4>
+              <p className="text-[#A0A6B1] text-sm italic">"{resultData.summary}"</p>
             </div>
           )}
 
           {status === 'error' && (
-            <div className="space-y-4 text-red-400">
+            <div className="space-y-6 text-red-400">
               <AlertCircle className="w-10 h-10 mx-auto" />
-              <p className="text-sm font-medium">{errorMessage}</p>
-              <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest">Reintentar</button>
+              <p className="text-sm font-medium px-8">{errorMessage}</p>
+              
+              {errorMessage.includes('Capa de Inteligencia') ? (
+                <button 
+                  onClick={handleOpenKeySelector}
+                  className="px-8 py-3 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
+                >
+                  Configurar Clave Ahora
+                </button>
+              ) : (
+                <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest">Reintentar</button>
+              )}
             </div>
           )}
 
