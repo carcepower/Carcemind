@@ -6,22 +6,31 @@ import { GoogleConfig, Memory, Task } from '../types';
  */
 export const googleApi = {
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
+    if (!token) {
+      throw new Error("TOKEN_MISSING: No hay un token de acceso válido.");
+    }
+
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
-    const response = await fetch(url, { ...options, headers });
+    
+    let response;
+    try {
+      response = await fetch(url, { ...options, headers });
+    } catch (e) {
+      throw new Error("ERROR_RED: No se pudo contactar con los servidores de Google. Revisa tu conexión.");
+    }
     
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      console.error(`Google API Error [${response.status}]:`, errData);
-      
-      // Extraer mensaje detallado de Google
-      const detail = errData.error?.message || "Error desconocido";
       const status = response.status;
+      const detail = errData.error?.message || "Error desconocido";
+
+      if (status === 401) {
+        throw new Error("SESSION_EXPIRED: Tu sesión de Google ha caducado. Por favor, ve a Ajustes y vuelve a Conectar.");
+      }
       
       if (status === 403) {
-        throw new Error(`PERMISO DENEGADO (403): ${detail}. Asegúrate de marcar los checkboxes al conectar.`);
-      } else if (status === 404) {
-        throw new Error(`API NO ENCONTRADA (404): Asegúrate de que la 'Google Drive API' está habilitada en tu Google Cloud Console.`);
+        throw new Error(`PERMISO_DENEGADO: No tienes permiso para esta acción. Asegúrate de marcar todas las casillas (Drive y Sheets) al conectar tu cuenta.`);
       }
       
       throw new Error(`Error ${status}: ${detail}`);
@@ -31,7 +40,6 @@ export const googleApi = {
   },
 
   async listFolders(token: string) {
-    // Consulta para listar carpetas que no estén en la papelera
     const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     const response = await this.fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)&pageSize=100&spaces=drive`,

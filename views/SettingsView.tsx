@@ -41,6 +41,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     }
   }, [config.isConnected, config.accessToken]);
 
+  const handleSessionExpired = () => {
+    setConfig({
+      isConnected: false,
+      accessToken: null,
+      email: null,
+      audioFolderId: null,
+      audioFolderName: null,
+      sheetFolderId: null,
+      sheetFolderName: null,
+      spreadsheetId: null
+    });
+    setError("Tu sesión de Google ha expirado. Por favor, vuelve a conectar.");
+  };
+
   const loadFolders = async () => {
     if (!config.accessToken) return;
     setLoadingFolders(true);
@@ -49,7 +63,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       const list = await googleApi.listFolders(config.accessToken);
       setFolders(list);
     } catch (e: any) {
-      setError(e.message || "Error al listar carpetas.");
+      if (e.message.includes("SESSION_EXPIRED")) {
+        handleSessionExpired();
+      } else {
+        setError(e.message || "Error al listar carpetas.");
+      }
     } finally {
       setLoadingFolders(false);
     }
@@ -126,7 +144,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       selectFolder('sheet', folder.id, 'CarceMind_Vault');
       loadFolders();
     } catch (e: any) {
-      setError(`Error al crear carpeta: ${e.message}`);
+      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
+      else setError(`Error al crear carpeta: ${e.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -139,7 +158,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       const ssId = await googleApi.createSpreadsheet(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
       setConfig(prev => ({ ...prev, spreadsheetId: ssId }));
     } catch (e: any) {
-      setError(`Error al crear índice: ${e.message}`);
+      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
+      else setError(`Error al crear índice: ${e.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -210,7 +230,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
                   onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }}
                   className={`p-6 rounded-3xl border cursor-pointer transition-all ${config.audioFolderId ? 'bg-[#10B981]/5 border-[#10B981]/20' : 'bg-[#151823] border-[#1F2330]'}`}
                 >
-                  <span className="text-sm font-medium">{config.audioFolderName || 'No seleccionada...'}</span>
+                  <span className="text-sm font-medium">{config.audioFolderName || 'SELECCIONAR CARPETA'}</span>
                 </div>
               </div>
               <div className="space-y-4">
@@ -219,7 +239,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
                   onClick={() => { loadFolders(); setActiveFolderSelector('sheet'); }}
                   className={`p-6 rounded-3xl border cursor-pointer transition-all ${config.sheetFolderId ? 'bg-[#10B981]/5 border-[#10B981]/20' : 'bg-[#151823] border-[#1F2330]'}`}
                 >
-                  <span className="text-sm font-medium">{config.sheetFolderName || 'No seleccionada...'}</span>
+                  <span className="text-sm font-medium">{config.sheetFolderName || 'SELECCIONAR CARPETA'}</span>
                 </div>
               </div>
             </div>
@@ -268,7 +288,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       {error && (
         <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4 animate-in slide-in-from-top-2">
           <AlertCircle className="w-6 h-6 shrink-0" />
-          <p className="text-sm font-medium">{error}</p>
+          <div className="space-y-1">
+             <p className="text-sm font-bold uppercase tracking-widest">Error de Credenciales</p>
+             <p className="text-sm font-medium">{error}</p>
+             {error.includes("SESSION_EXPIRED") && <p className="text-[10px] opacity-70">Pulsa 'Conectar Google' de nuevo para refrescar tu token.</p>}
+          </div>
         </div>
       )}
     </div>
