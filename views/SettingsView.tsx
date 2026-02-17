@@ -188,8 +188,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
         </div>
         
         <p className="text-[10px] text-[#646B7B] leading-relaxed">
-          El motor neuronal Gemini 3 Flash está configurado y vinculado automáticamente. 
-          No se requiere acción manual. Asegúrate de que la variable <strong>API_KEY</strong> esté configurada en tu entorno de despliegue.
+          El motor neuronal Gemini 3 Flash está configurado. 
+          Asegúrate de que la variable <strong>VITE_API_KEY</strong> esté configurada en Vercel para que el navegador pueda acceder a ella.
           <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[#5E7BFF] ml-1 flex inline-flex items-center gap-1 hover:underline">
             Info de Facturación <ExternalLink className="w-2 h-2" />
           </a>

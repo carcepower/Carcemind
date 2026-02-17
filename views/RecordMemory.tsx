@@ -60,7 +60,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Usamos la variable con prefijo VITE_ para asegurar visibilidad en el cliente
+      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
         reader.onloadend = () => r((reader.result as string).split(',')[1]);

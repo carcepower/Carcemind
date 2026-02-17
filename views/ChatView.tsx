@@ -30,7 +30,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey });
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Contexto memorias: ${JSON.stringify(memories.slice(0, 5))}\n\nPregunta: ${input}`
@@ -38,7 +39,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Verifica tu clave API.', timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Verifica tu clave VITE_API_KEY.', timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
