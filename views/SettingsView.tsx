@@ -58,13 +58,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     }
   };
 
-  const handleConnect = (prompt: 'none' | 'select_account' = 'none') => {
+  const handleConnect = (promptMode: 'select_account' | 'consent' | '' = 'select_account') => {
     setError(null);
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
-        prompt: prompt,
+        prompt: promptMode, // Ahora por defecto es 'select_account' para evitar interaction_required
         callback: (response: any) => {
           if (response.access_token) {
             fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
