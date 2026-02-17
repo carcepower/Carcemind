@@ -1,9 +1,9 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Chrome, FileText } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -15,14 +15,68 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const [status, setStatus] = useState<'idle' | 'recording' | 'processing' | 'uploading' | 'structuring' | 'finished' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [resultData, setResultData] = useState<any>(null);
+  
+  // Device Selection
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [showDeviceSelector, setShowDeviceSelector] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Detect supported MIME types
+  const getSupportedMimeType = () => {
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac'];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  };
+
+  useEffect(() => {
+    const initDevices = async () => {
+      try {
+        // Request temporary permission to get labels
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
+        setDevices(audioInputs);
+        
+        // Try to auto-select "Built-in" or "Internal" to avoid Continuity Mic (iPhone)
+        const preferred = audioInputs.find(d => 
+          d.label.toLowerCase().includes('built-in') || 
+          d.label.toLowerCase().includes('interno') ||
+          d.label.toLowerCase().includes('default')
+        );
+        
+        if (preferred) {
+          setSelectedDeviceId(preferred.deviceId);
+        } else if (audioInputs.length > 0) {
+          setSelectedDeviceId(audioInputs[0].deviceId);
+        }
+
+        tempStream.getTracks().forEach(t => t.stop());
+      } catch (err) {
+        console.warn("No se pudieron listar los micrófonos:", err);
+      }
+    };
+    initDevices();
+  }, []);
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const mimeType = getSupportedMimeType();
+      if (!mimeType) throw new Error("Tu navegador no soporta grabación de audio.");
+
+      const constraints = { 
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true 
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -30,30 +84,38 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        processAudio(audioBlob);
+      mediaRecorder.onstop = async () => {
+        const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (finalBlob.size === 0) {
+          setStatus('error');
+          setErrorMessage('El audio capturado está vacío. Revisa los permisos de tu micrófono.');
+          return;
+        }
+        processAudio(finalBlob, mimeType);
       };
 
-      mediaRecorder.start();
+      // Request data every 1 second to ensure chunks are captured
+      mediaRecorder.start(1000);
       setIsRecording(true);
       setStatus('recording');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setStatus('error');
-      setErrorMessage('No se pudo acceder al micrófono.');
+      setErrorMessage(err.message || 'No se pudo acceder al micrófono.');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
     }
     setIsRecording(false);
   };
 
-  const processAudio = async (blob: Blob) => {
+  const processAudio = async (blob: Blob, mimeType: string) => {
     if (!googleConfig.isConnected || !googleConfig.audioFolderId || !googleConfig.spreadsheetId) {
       setStatus('error');
       setErrorMessage('Configura Google Drive y Sheets en Ajustes primero.');
@@ -62,7 +124,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
 
     setStatus('uploading');
     const token = googleConfig.accessToken!;
-    const fileName = `CarceMind_Memory_${new Date().toISOString()}.webm`;
+    const extension = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('webm') ? 'webm' : 'ogg';
+    const fileName = `CarceMind_Memory_${new Date().toISOString()}.${extension}`;
 
     try {
       // 1. Upload to Drive
@@ -78,6 +141,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         reader.readAsDataURL(blob);
       });
 
+      // Gemini 2.5 is very flexible but we must be precise with the MIME type
+      const geminiMime = mimeType.split(';')[0]; // Remove codecs for Gemini
+
       const prompt = `Actúa como CarceMind, el cerebro externo de Pablo. 
       Analiza este audio y genera un JSON estructurado con estas claves:
       - title: Un título ejecutivo corto.
@@ -90,7 +156,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const result = await ai.models.generateContent({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         contents: [
-          { parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: prompt }] }
+          { parts: [{ inlineData: { data: base64Audio, mimeType: geminiMime } }, { text: prompt }] }
         ],
         config: {
           responseMimeType: 'application/json',
@@ -161,10 +227,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         emotionalTag: structuredData.emotionalState,
         type: 'voice'
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setStatus('error');
-      setErrorMessage('Error en el procesamiento neuronal. Reintenta.');
+      setErrorMessage(`Error Neuronal: ${err.message || 'Error desconocido'}`);
     }
   };
 
@@ -178,19 +244,54 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       </div>
 
       <div className="relative flex flex-col items-center gap-12 w-full">
-        <div className="relative">
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={['uploading', 'processing', 'structuring'].includes(status)}
-            className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 transform active:scale-95 shadow-2xl relative z-10 ${
-              isRecording 
-                ? 'bg-red-500/20 text-red-500 border-red-500/30 ring-[12px] ring-red-500/10' 
-                : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF33] hover:shadow-[#5E7BFF55]'
-            }`}
-          >
-            {isRecording ? <Square fill="currentColor" className="w-10 h-10" /> : <Mic className="w-16 h-16" />}
-          </button>
-          {isRecording && <div className="absolute inset-0 rounded-full bg-[#8A6CFF] animate-ping opacity-20 -z-10" />}
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative">
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={['uploading', 'processing', 'structuring'].includes(status)}
+              className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 transform active:scale-95 shadow-2xl relative z-10 ${
+                isRecording 
+                  ? 'bg-red-500/20 text-red-500 border-red-500/30 ring-[12px] ring-red-500/10' 
+                  : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF33] hover:shadow-[#5E7BFF55]'
+              }`}
+            >
+              {isRecording ? <Square fill="currentColor" className="w-10 h-10" /> : <Mic className="w-16 h-16" />}
+            </button>
+            {isRecording && <div className="absolute inset-0 rounded-full bg-[#8A6CFF] animate-ping opacity-20 -z-10" />}
+          </div>
+
+          {/* Device Selector */}
+          {!isRecording && status === 'idle' && devices.length > 1 && (
+            <div className="relative">
+              <button 
+                onClick={() => setShowDeviceSelector(!showDeviceSelector)}
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#151823] border border-[#1F2330] text-[#646B7B] text-[10px] font-bold uppercase tracking-widest hover:border-[#5E7BFF] transition-all"
+              >
+                <Settings className="w-3 h-3" />
+                {devices.find(d => d.deviceId === selectedDeviceId)?.label || 'Seleccionar Micrófono'}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              
+              {showDeviceSelector && (
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 bg-[#151823] border border-[#1F2330] rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2">
+                  {devices.map(device => (
+                    <button
+                      key={device.deviceId}
+                      onClick={() => {
+                        setSelectedDeviceId(device.deviceId);
+                        setShowDeviceSelector(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-tight transition-all ${
+                        selectedDeviceId === device.deviceId ? 'bg-[#5E7BFF] text-white' : 'text-[#646B7B] hover:bg-white/5'
+                      }`}
+                    >
+                      {device.label || `Micrófono ${device.deviceId.slice(0, 5)}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="w-full max-w-2xl glass p-10 rounded-[3rem] border border-[#1F2330] min-h-[220px] flex flex-col items-center justify-center text-center shadow-2xl space-y-6">
