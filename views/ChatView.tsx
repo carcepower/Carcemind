@@ -2,8 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { GoogleGenAI, Type } from '@google/genai';
-import { Send, Sparkles, User, BrainCircuit, Loader2, ListTodo, History, Search } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
+import { Send, Sparkles, User, BrainCircuit, Loader2 } from 'lucide-react';
 
 interface ChatViewProps {
   memories: Memory[];
@@ -12,154 +12,76 @@ interface ChatViewProps {
 
 const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué podemos avanzar hoy?', timestamp: new Date() }
+    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas mediante tu API_KEY_GEMINI. ¿En qué avanzamos?', timestamp: new Date() }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [currentProcess, setCurrentProcess] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Usamos tu variable de Vercel
+  const ACTIVE_API_KEY = (process.env as any).API_KEY_GEMINI || process.env.API_KEY;
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [messages, isTyping]);
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
-
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
-    const currentInput = input;
     setInput('');
     setIsTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const token = googleConfig.accessToken;
-
-      // 1. INTENT CLASSIFICATION
-      setCurrentProcess('Clasificando intención...');
-      const intentResult = await ai.models.generateContent({
+      const ai = new GoogleGenAI({ apiKey: ACTIVE_API_KEY });
+      const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Analiza la intención de Pablo: "${currentInput}". Responde en JSON: { "intent": "tasks" | "recent_memories" | "search" | "general", "query": "string" }`,
-        config: { responseMimeType: 'application/json' }
-      });
-      const { intent, query } = JSON.parse(intentResult.text);
-
-      let context = "";
-
-      // 2. STRUCTURED RETRIEVAL
-      if (googleConfig.isConnected && googleConfig.spreadsheetId && token) {
-        if (intent === 'tasks') {
-          setCurrentProcess('Consultando hoja de TAREAS...');
-          const tasksRows = await googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', token);
-          const pending = tasksRows.slice(1).filter((r: any) => r[4] === 'pending');
-          context = `TAREAS PENDIENTES:\n${pending.map((r: any) => `- ${r[2]} (Prioridad: ${r[3]}, Límite: ${r[6] || 'N/A'})`).join('\n')}`;
-        } else if (intent === 'recent_memories' || intent === 'search') {
-          setCurrentProcess('Recuperando fragmentos relevantes...');
-          const entriesRows = await googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', token);
-          const entries = entriesRows.slice(1).reverse();
-          const filtered = intent === 'search' 
-            ? entries.filter((e: any) => e[2].toLowerCase().includes(query.toLowerCase()) || e[3].toLowerCase().includes(query.toLowerCase()) || e[8].toLowerCase().includes(query.toLowerCase())).slice(0, 5)
-            : entries.slice(0, 8);
-          
-          context = `MEMORIAS RELEVANTES:\n${filtered.map((r: any) => `Fecha: ${r[1]}\nTítulo: ${r[2]}\nResumen: ${r[3]}\nHechos clave: ${r[8]}`).join('\n\n')}`;
-        }
-      } else {
-        context = "No hay conexión con Google. Usando sólo memoria volátil local.";
-      }
-
-      // 3. FINAL RESPONSE GENERATION (TONO PABLO)
-      setCurrentProcess('Generando respuesta estratégica...');
-      const finalResult = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Eres CarceMind, el asistente ejecutivo de Pablo.
-        TONO: Español de España, natural, directo, práctico, ejecutivo.
-        CONTEXTO: ${context}
-        USUARIO PREGUNTA: "${currentInput}"`,
-        config: { temperature: 0.7 }
+        contents: `Contexto memorias: ${JSON.stringify(memories.slice(0, 5))}\n\nPregunta: ${input}`
       });
 
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: finalResult.text || 'Error en la respuesta neuronal.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiMsg]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error procesando tu petición neuronal.', timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
+    } catch (err: any) {
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Revisa la API_KEY_GEMINI en Vercel.', timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
-      setCurrentProcess('');
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-160px)] flex flex-col relative animate-in fade-in slide-in-from-right-4 duration-500">
-      <header className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center shadow-lg shadow-[#5E7BFF22]">
-            <BrainCircuit className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-semibold">Consultor CarceMind</h2>
-            <p className="text-sm text-[#A0A6B1]">Capa RAG activada • Gemini 3 Flash</p>
-          </div>
+    <div className="max-w-4xl mx-auto h-[calc(100vh-160px)] flex flex-col">
+      <header className="flex items-center gap-4 mb-8">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center">
+          <BrainCircuit className="text-white" />
         </div>
+        <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-12 scroll-smooth pr-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-8 pr-4">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex gap-6 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-500 ${
-              msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : 'bg-gradient-to-b from-[#5E7BFF] to-[#8A6CFF] shadow-lg shadow-[#5E7BFF33]'
-            }`}>
-              {msg.role === 'user' ? <User className="w-5 h-5 text-[#A0A6B1]" /> : <Sparkles className="w-5 h-5 text-white" />}
+          <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-[#151823]' : 'bg-[#5E7BFF]'}`}>
+              {msg.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
             </div>
-            <div className={`max-w-[85%] space-y-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-              <div className="inline-block px-1 py-1 text-[17px] leading-relaxed text-[#F5F7FA] font-light whitespace-pre-wrap">
-                {msg.text}
-              </div>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-[#646B7B] font-mono font-bold">
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
+            <div className={`p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-[#151823] text-right' : 'bg-white/5'}`}>
+              {msg.text}
             </div>
           </div>
         ))}
-        {isTyping && (
-          <div className="flex gap-6 items-center">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-b from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center animate-pulse shadow-lg shadow-[#5E7BFF22]">
-              <Loader2 className="w-5 h-5 text-white animate-spin" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase tracking-widest text-[#5E7BFF] font-bold animate-pulse">Analizando Red Cognitiva...</p>
-              <p className="text-[9px] text-[#646B7B] uppercase tracking-tighter italic">{currentProcess}</p>
-            </div>
-          </div>
-        )}
+        {isTyping && <Loader2 className="animate-spin text-[#5E7BFF]" />}
       </div>
 
-      <div className="pt-8 bg-[#0B0D12] sticky bottom-0">
-        <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-3 focus-within:ring-2 ring-[#5E7BFF33] transition-all group shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="¿En qué piensas ahora, Pablo?"
-            className="w-full bg-transparent border-none focus:ring-0 py-5 px-10 text-[#F5F7FA] placeholder-[#646B7B] outline-none text-lg"
-          />
-          <button
-            onClick={handleSend}
-            disabled={isTyping}
-            className="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-2xl disabled:opacity-50"
-          >
-            <Send className="w-6 h-6" />
-          </button>
-        </div>
+      <div className="mt-8 relative">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="Consulta tu cerebro..."
+          className="w-full glass border border-[#1F2330] rounded-2xl py-5 px-6 outline-none focus:border-[#5E7BFF] transition-all"
+        />
+        <button onClick={handleSend} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white text-black rounded-xl">
+          <Send size={18} />
+        </button>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -15,200 +15,108 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const [status, setStatus] = useState<'idle' | 'recording' | 'processing' | 'uploading' | 'structuring' | 'finished' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const getSupportedMimeType = () => {
-    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) return type;
-    }
-    return '';
-  };
-
-  useEffect(() => {
-    const initDevices = async () => {
-      try {
-        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
-        setDevices(audioInputs);
-        if (audioInputs.length > 0) setSelectedDeviceId(audioInputs[0].deviceId);
-        tempStream.getTracks().forEach(t => t.stop());
-      } catch (err) {
-        console.warn("No se pudieron listar los micrófonos:", err);
-      }
-    };
-    initDevices();
-  }, []);
+  // Intentamos obtener la clave de tu variable específica de Vercel
+  const ACTIVE_API_KEY = (process.env as any).API_KEY_GEMINI || process.env.API_KEY;
 
   const startRecording = async () => {
-    if (!googleConfig.isConnected || !googleConfig.accessToken) {
+    if (!googleConfig.isConnected) {
       setStatus('error');
-      setErrorMessage('Por favor, conecta tu cuenta de Google en Ajustes.');
+      setErrorMessage('Conecta tu cuenta de Google en Ajustes.');
       return;
     }
-    if (!googleConfig.audioFolderId || !googleConfig.spreadsheetId) {
+    if (!ACTIVE_API_KEY) {
       setStatus('error');
-      setErrorMessage('Falta configurar las carpetas en Ajustes.');
+      setErrorMessage('No se ha detectado la API_KEY_GEMINI en el sistema.');
       return;
     }
 
     try {
-      const mimeType = getSupportedMimeType();
-      const constraints = { audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
+      mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = async () => {
-        const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        processAudio(finalBlob, mimeType);
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        processAudio(blob);
       };
 
-      mediaRecorder.start(1000);
+      mediaRecorder.start();
       setIsRecording(true);
       setStatus('recording');
     } catch (err: any) {
       setStatus('error');
-      setErrorMessage(err.message || 'No se pudo acceder al micrófono.');
+      setErrorMessage('No se pudo acceder al micrófono.');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-    }
+    mediaRecorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
     setIsRecording(false);
   };
 
-  const processAudio = async (blob: Blob, mimeType: string) => {
+  const processAudio = async (blob: Blob) => {
     setStatus('uploading');
-    const token = googleConfig.accessToken!;
-    const fileName = `CarceMind_Memory_${new Date().toISOString()}.webm`;
-
     try {
-      const driveFile = await googleApi.uploadFile(token, blob, fileName, googleConfig.audioFolderId!);
+      const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const base64Audio = await new Promise<string>((resolve) => {
+      const ai = new GoogleGenAI({ apiKey: ACTIVE_API_KEY });
+      const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.onloadend = () => r((reader.result as string).split(',')[1]);
         reader.readAsDataURL(blob);
       });
 
-      const geminiMime = mimeType.split(';')[0];
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [
-          { parts: [{ inlineData: { data: base64Audio, mimeType: geminiMime } }, { text: "Analiza este pensamiento. Responde solo en JSON con: title, summary, emotionalState, tags, tasks, snippets" }] }
-        ],
+        contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Resume este audio. JSON: title, summary, emotionalState, tags, snippets" }] }],
         config: { responseMimeType: 'application/json' }
       });
 
-      const structuredData = JSON.parse(result.text);
-
+      const data = JSON.parse(result.text);
       setStatus('structuring');
       const entryId = crypto.randomUUID();
-      const timestamp = new Date().toISOString();
-
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
-        entryId, timestamp, structuredData.title, structuredData.summary, 
-        structuredData.emotionalState, structuredData.tags?.join(', ') || '', 
-        driveFile.id, driveFile.webViewLink, structuredData.snippets?.join(' | ') || ''
-      ], token);
+        entryId, new Date().toISOString(), data.title, data.summary, data.emotionalState, data.tags?.join(', '), driveFile.id, driveFile.webViewLink, data.snippets?.join(' | ')
+      ], googleConfig.accessToken!);
 
       setStatus('finished');
-      onMemoryAdded({
-        id: entryId,
-        title: structuredData.title,
-        excerpt: structuredData.summary,
-        timestamp: new Date(),
-        emotionalTag: structuredData.emotionalState,
-        type: 'voice'
-      });
+      onMemoryAdded({ id: entryId, title: data.title, excerpt: data.summary, timestamp: new Date(), type: 'voice' });
     } catch (err: any) {
-      console.error("Error en proceso neuronal:", err);
       setStatus('error');
-      
-      if (err.message?.includes('API Key') || err.message?.includes('key') || err.message?.includes('401')) {
-        setErrorMessage("Error de autenticación neuronal. Contacta con soporte.");
-      } else if (err.message.includes("SESSION_EXPIRED")) {
-        setErrorMessage("Tu sesión de Google ha expirado. Ve a Ajustes y reconecta.");
-      } else {
-        setErrorMessage(`Error Neuronal: ${err.message}`);
-      }
+      setErrorMessage(err.message || 'Error en el procesamiento neuronal.');
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
+    <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12">
       <div className="text-center space-y-4">
-        <h2 className="text-4xl font-semibold tracking-tight">Capa de Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Tu voz se procesa y se estructura en la nube con Gemini 3 Flash.</p>
+        <h2 className="text-4xl font-semibold">Ingesta Cognitiva</h2>
+        <p className="text-[#A0A6B1]">Usando tu configuración de Vercel ({ACTIVE_API_KEY ? 'Conectado' : 'Desconectado'})</p>
       </div>
 
-      <div className="relative flex flex-col items-center gap-12 w-full">
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          disabled={['uploading', 'processing', 'structuring'].includes(status)}
-          className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 transform active:scale-95 shadow-2xl ${
-            isRecording 
-              ? 'bg-red-500/20 text-red-500 border-red-500/30 ring-[12px] ring-red-500/10' 
-              : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF44]'
-          }`}
-        >
-          {isRecording ? <Square fill="currentColor" className="w-10 h-10" /> : <Mic className="w-16 h-16" />}
-        </button>
+      <button
+        onClick={isRecording ? stopRecording : startRecording}
+        className={`w-40 h-40 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/20 text-red-500 ring-8 ring-red-500/10' : 'bg-[#5E7BFF] text-white shadow-xl shadow-[#5E7BFF44]'}`}
+      >
+        {isRecording ? <Square fill="currentColor" /> : <Mic className="w-16 h-16" />}
+      </button>
 
-        <div className="w-full max-w-2xl glass p-10 rounded-[3rem] border border-[#1F2330] min-h-[220px] flex flex-col items-center justify-center text-center">
-          {['uploading', 'processing', 'structuring'].includes(status) && (
-            <div className="space-y-6">
-              <Loader2 className="w-10 h-10 animate-spin text-[#5E7BFF] mx-auto" />
-              <p className="text-sm font-bold uppercase tracking-widest text-[#5E7BFF]">{status}...</p>
-            </div>
-          )}
-
-          {status === 'finished' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
-              <CheckCircle2 className="w-10 h-10 text-[#10B981] mx-auto" />
-              <h4 className="text-xl font-medium">Memoria Estructurada</h4>
-              <button onClick={() => setStatus('idle')} className="text-xs underline text-[#646B7B]">Grabar otra</button>
-            </div>
-          )}
-
-          {status === 'error' && (
-            <div className="space-y-6 text-red-400">
-              <AlertCircle className="w-10 h-10 mx-auto" />
-              <p className="text-sm font-medium px-10 leading-relaxed">{errorMessage}</p>
-              <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest block mx-auto">Reintentar</button>
-            </div>
-          )}
-
-          {status === 'idle' && (
-             <div className="space-y-4 opacity-30">
-               <BrainCircuit className="w-12 h-12 mx-auto" />
-               <p className="text-xs uppercase tracking-widest font-bold">Pulsa para grabar pensamiento</p>
-             </div>
-          )}
+      {status !== 'idle' && (
+        <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
+          {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
+          <p className="font-bold uppercase tracking-widest text-sm">{status === 'finished' ? '¡Memoria Guardada!' : status + '...'}</p>
+          {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -11,6 +11,7 @@ import {
   LogOut,
   Brain,
   Zap,
+  CheckCircle2,
   ExternalLink
 } from 'lucide-react';
 
@@ -27,6 +28,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
+
+  // Detectamos si la clave está presente (con tu nombre de Vercel o el estándar)
+  const isAiConfigured = !!((process.env as any).API_KEY_GEMINI || process.env.API_KEY);
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) {
@@ -179,16 +183,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               </div>
             </div>
             
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-              <Zap className="w-3 h-3 fill-current" />
-              IA Lista y Gestionada
+            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest ${isAiConfigured ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+              {isAiConfigured ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+              {isAiConfigured ? 'IA Activada y Lista (Vercel Sync)' : 'IA No Detectada'}
             </div>
           </div>
         </div>
         
         <p className="text-[10px] text-[#646B7B] leading-relaxed">
-          El Motor Neuronal está configurado automáticamente por CarceMind Cloud. 
-          No se requiere acción manual para la vinculación del modelo Gemini 3 Flash.
+          {isAiConfigured 
+            ? "Se ha detectado tu configuración de Vercel (API_KEY_GEMINI). El motor está operando correctamente."
+            : "No se encuentra la variable API_KEY o API_KEY_GEMINI en el sistema."}
           <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[#5E7BFF] ml-1 flex inline-flex items-center gap-1 hover:underline">
             Info de Facturación <ExternalLink className="w-2 h-2" />
           </a>
