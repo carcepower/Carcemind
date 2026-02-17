@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown } from 'lucide-react';
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit, Settings, ChevronDown, Key } from 'lucide-react';
 
 interface RecordMemoryProps {
   onMemoryAdded: (memory: any) => void;
@@ -48,6 +48,16 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     initDevices();
   }, []);
 
+  const handleOpenAiSelector = async () => {
+    try {
+      if ((window as any).aistudio?.openSelectKey) {
+        await (window as any).aistudio.openSelectKey();
+        setStatus('idle');
+        setErrorMessage('');
+      }
+    } catch (e) {}
+  };
+
   const startRecording = async () => {
     // Validación PREVIA
     if (!googleConfig.isConnected || !googleConfig.accessToken) {
@@ -57,7 +67,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     }
     if (!googleConfig.audioFolderId || !googleConfig.spreadsheetId) {
       setStatus('error');
-      setErrorMessage('Falta configurar las carpetas o la base de datos en Ajustes.');
+      setErrorMessage('Falta configurar las carpetas en Ajustes.');
       return;
     }
 
@@ -102,14 +112,15 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const processAudio = async (blob: Blob, mimeType: string) => {
     setStatus('uploading');
     const token = googleConfig.accessToken!;
-    const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-    const fileName = `CarceMind_Memory_${new Date().toISOString()}.${extension}`;
+    const fileName = `CarceMind_Memory_${new Date().toISOString()}.webm`;
 
     try {
       const driveFile = await googleApi.uploadFile(token, blob, fileName, googleConfig.audioFolderId!);
       
       setStatus('processing');
+      // CREAR INSTANCIA JUSTO ANTES DE USAR PARA CAPTURAR LA ÚLTIMA API KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
       const base64Audio = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
@@ -148,13 +159,14 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         type: 'voice'
       });
     } catch (err: any) {
+      console.error("Error en proceso neuronal:", err);
       setStatus('error');
-      if (err.message.includes("SESSION_EXPIRED")) {
+      if (err.message?.includes('API Key') || err.message?.includes('key')) {
+        setErrorMessage("Falta vincular el Motor de Inteligencia (API Key).");
+      } else if (err.message.includes("SESSION_EXPIRED")) {
         setErrorMessage("Tu sesión de Google ha expirado. Ve a Ajustes y reconecta.");
-      } else if (err.message.includes("PERMISO_DENEGADO")) {
-        setErrorMessage("Faltan permisos. Reconecta en Ajustes y MARCA TODAS las casillas de Google.");
       } else {
-        setErrorMessage(`Error: ${err.message}`);
+        setErrorMessage(`Error Neuronal: ${err.message}`);
       }
     }
   };
@@ -163,7 +175,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Capa de Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Tu voz se procesa y se estructura en la nube.</p>
+        <p className="text-[#A0A6B1]">Tu voz se procesa y se estructura en la nube con Gemini 3 Flash.</p>
       </div>
 
       <div className="relative flex flex-col items-center gap-12 w-full">
@@ -173,7 +185,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
           className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-500 transform active:scale-95 shadow-2xl ${
             isRecording 
               ? 'bg-red-500/20 text-red-500 border-red-500/30 ring-[12px] ring-red-500/10' 
-              : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white'
+              : 'bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] text-white shadow-[#5E7BFF44]'
           }`}
         >
           {isRecording ? <Square fill="currentColor" className="w-10 h-10" /> : <Mic className="w-16 h-16" />}
@@ -198,15 +210,25 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
           {status === 'error' && (
             <div className="space-y-6 text-red-400">
               <AlertCircle className="w-10 h-10 mx-auto" />
-              <p className="text-sm font-medium">{errorMessage}</p>
-              <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest">Reintentar</button>
+              <p className="text-sm font-medium px-10 leading-relaxed">{errorMessage}</p>
+              
+              {errorMessage.includes('API Key') && (
+                <button 
+                  onClick={handleOpenAiSelector}
+                  className="px-6 py-3 rounded-xl bg-white text-black font-bold text-xs uppercase tracking-widest flex items-center gap-2 mx-auto hover:scale-105 transition-all"
+                >
+                  <Key className="w-4 h-4" /> Vincular IA ahora
+                </button>
+              )}
+              
+              <button onClick={() => setStatus('idle')} className="text-xs underline font-bold uppercase tracking-widest block mx-auto">Reintentar</button>
             </div>
           )}
 
           {status === 'idle' && (
              <div className="space-y-4 opacity-30">
                <BrainCircuit className="w-12 h-12 mx-auto" />
-               <p className="text-xs uppercase tracking-widest font-bold">Pulsa para grabar</p>
+               <p className="text-xs uppercase tracking-widest font-bold">Pulsa para grabar pensamiento</p>
              </div>
           )}
         </div>
