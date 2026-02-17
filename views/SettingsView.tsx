@@ -19,7 +19,9 @@ import {
   ChevronRight,
   LogOut,
   FolderSync,
-  Key
+  Key,
+  Info,
+  ExternalLink
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -54,7 +56,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       setFolders(list);
     } catch (e: any) {
       console.error(e);
-      setError("Faltan permisos de lectura. Pulsa 'Recalibrar Permisos' para solucionarlo.");
+      // Mostrar el error real que devuelve la API
+      setError(e.message || "Error al listar carpetas. Revisa los permisos.");
     } finally {
       setLoadingFolders(false);
     }
@@ -65,7 +68,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+        scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets',
         prompt: promptMode,
         callback: (response: any) => {
           if (response.access_token) {
@@ -80,10 +83,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
                 accessToken: response.access_token,
                 email: user.email
               });
+              setError(null);
             })
             .catch(err => setError("Conexión exitosa, pero error al recuperar perfil."));
           } else if (response.error) {
-            setError(`Error de Google: ${response.error}`);
+            setError(`Error de Google Auth: ${response.error}`);
           }
         },
       });
@@ -94,7 +98,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   };
 
   const handleDisconnect = () => {
-    // Intentar revocar el token en Google para una limpieza real
     if (config.accessToken) {
       try {
         (window as any).google.accounts.oauth2.revoke(config.accessToken, () => {
@@ -136,8 +139,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       selectFolder('audio', folder.id, 'CarceMind_Vault');
       selectFolder('sheet', folder.id, 'CarceMind_Vault');
       loadFolders();
-    } catch (e) {
-      setError("No se pudo crear la carpeta automática.");
+    } catch (e: any) {
+      setError(`Error al crear carpeta: ${e.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -150,8 +153,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     try {
       const ssId = await googleApi.createSpreadsheet(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
       setConfig(prev => ({ ...prev, spreadsheetId: ssId }));
-    } catch (e) {
-      setError("Error al crear el índice en Sheets. Asegúrate de tener permisos de escritura.");
+    } catch (e: any) {
+      setError(`Error al crear índice: ${e.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -165,18 +168,52 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       </header>
 
       {error && (
-        <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-2">
-          <div className="flex items-center gap-4">
-            <AlertCircle className="w-6 h-6 shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
+        <div className="p-8 rounded-[2.5rem] bg-red-500/10 border border-red-500/20 text-red-400 flex flex-col gap-6 animate-in slide-in-from-top-2">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <AlertCircle className="w-8 h-8 shrink-0" />
+              <div>
+                <p className="text-lg font-semibold">Error de Diagnóstico</p>
+                <p className="text-sm font-mono opacity-80 break-all">{error}</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => handleConnect('consent select_account')}
+              className="px-8 py-4 rounded-2xl bg-red-500 text-white font-bold text-xs uppercase tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 whitespace-nowrap shadow-lg shadow-red-500/20"
+            >
+              <Key className="w-5 h-5" />
+              Recalibrar Permisos
+            </button>
           </div>
-          <button 
-            onClick={() => handleConnect('consent select_account')}
-            className="px-6 py-3 rounded-2xl bg-red-500 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-red-600 transition-all flex items-center gap-2 whitespace-nowrap shadow-lg shadow-red-500/20"
-          >
-            <Key className="w-4 h-4" />
-            Recalibrar Permisos
-          </button>
+          
+          <div className="p-6 rounded-2xl bg-black/20 border border-white/5 space-y-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">
+              <Settings2 className="w-4 h-4 text-[#5E7BFF]" />
+              Checklist de Solución de Problemas:
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-white uppercase tracking-tighter">1. En el Popup de Google:</p>
+                <p className="text-xs text-[#A0A6B1] leading-relaxed">
+                  Al pulsar "Recalibrar", Google mostrará una lista de permisos. **Debes marcar TODAS las casillas azules** manualmente. Si pulsas "Continuar" sin marcar los cuadros, dará error de lectura.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-white uppercase tracking-tighter">2. En Google Cloud Console:</p>
+                <p className="text-xs text-[#A0A6B1] leading-relaxed">
+                  Asegúrate de que la <strong>Google Drive API</strong> esté "Enabled" en tu proyecto.
+                </p>
+                <a 
+                  href="https://console.cloud.google.com/apis/library/drive.googleapis.com" 
+                  target="_blank" 
+                  className="inline-flex items-center gap-1 text-[10px] text-[#5E7BFF] font-bold uppercase hover:underline"
+                >
+                  Activar Drive API <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

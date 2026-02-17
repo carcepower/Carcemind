@@ -13,17 +13,28 @@ export const googleApi = {
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
       console.error(`Google API Error [${response.status}]:`, errData);
-      throw new Error(errData.error?.message || `Error en la petición a Google API (${response.status})`);
+      
+      // Extraer mensaje detallado de Google
+      const detail = errData.error?.message || "Error desconocido";
+      const status = response.status;
+      
+      if (status === 403) {
+        throw new Error(`PERMISO DENEGADO (403): ${detail}. Asegúrate de marcar los checkboxes al conectar.`);
+      } else if (status === 404) {
+        throw new Error(`API NO ENCONTRADA (404): Asegúrate de que la 'Google Drive API' está habilitada en tu Google Cloud Console.`);
+      }
+      
+      throw new Error(`Error ${status}: ${detail}`);
     }
     
     return response;
   },
 
   async listFolders(token: string) {
-    // Consulta para listar carpetas (mimeType de folder) que no estén en la papelera
+    // Consulta para listar carpetas que no estén en la papelera
     const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     const response = await this.fetchWithAuth(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)&pageSize=100`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)&pageSize=100&spaces=drive`,
       token
     );
     const data = await response.json();
@@ -71,7 +82,6 @@ export const googleApi = {
   },
 
   async createSpreadsheet(token: string, name: string, folderId: string) {
-    // Create spreadsheet
     const response = await this.fetchWithAuth(
       'https://sheets.googleapis.com/v4/spreadsheets',
       token,
@@ -84,14 +94,12 @@ export const googleApi = {
     const ss = await response.json();
     const spreadsheetId = ss.spreadsheetId;
 
-    // Move to folder
     await this.fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root`,
       token,
       { method: 'PATCH' }
     );
 
-    // Setup sheets: ENTRADAS and TAREAS
     await this.fetchWithAuth(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
       token,
@@ -102,13 +110,12 @@ export const googleApi = {
           requests: [
             { addSheet: { properties: { title: 'ENTRADAS' } } },
             { addSheet: { properties: { title: 'TAREAS' } } },
-            { deleteSheet: { sheetId: 0 } }, // Delete the default Sheet1
+            { deleteSheet: { sheetId: 0 } },
           ],
         }),
       }
     );
 
-    // Add headers
     await this.appendRow(spreadsheetId, 'ENTRADAS', [
       'ID_ENTRADA', 'FECHA_CREACION', 'TITULO', 'RESUMEN', 'ESTADO_EMOCIONAL', 'TAGS', 'DRIVE_FILE_ID', 'DRIVE_WEBVIEW_LINK', 'SNIPPETS'
     ], token);
