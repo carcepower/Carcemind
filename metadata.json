@@ -1,0 +1,7 @@
+{
+  "name": "CarceMind",
+  "description": "A premium AI-powered personal memory assistant. Record voice notes, organize tasks, and chat with your cognitive history in a sophisticated Apple-inspired interface.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
