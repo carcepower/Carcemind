@@ -9,7 +9,8 @@ import {
   History, 
   Settings,
   BrainCircuit,
-  BookOpen
+  BookOpen,
+  Mail
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,24 +24,23 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
     { id: ViewType.DASHBOARD, label: 'CUADRO DE MANDO', icon: LayoutDashboard },
     { id: ViewType.RECORD, label: 'GRABAR', icon: Mic },
     { id: ViewType.CHAT, label: 'CONSULTOR', icon: MessageSquare },
+    { id: ViewType.MAIL, label: 'CARCEMAIL', icon: Mail },
     { id: ViewType.TASKS, label: 'TAREAS', icon: CheckSquare },
     { id: ViewType.MEMORIES, label: 'CRONOLOGÍA', icon: History },
     { id: ViewType.INSTRUCTIONS, label: 'INSTRUCCIONES', icon: BookOpen },
     { id: ViewType.SETTINGS, label: 'AJUSTES', icon: Settings },
   ];
 
-  // Íconos para la barra inferior (limitado a 5 para que quepa bien en móvil)
   const mobileBottomItems = [
     { id: ViewType.DASHBOARD, icon: LayoutDashboard },
     { id: ViewType.RECORD, icon: Mic },
-    { id: ViewType.CHAT, icon: MessageSquare },
+    { id: ViewType.MAIL, icon: Mail },
     { id: ViewType.TASKS, icon: CheckSquare },
     { id: ViewType.SETTINGS, icon: Settings },
   ];
 
   return (
     <>
-      {/* Sidebar Lateral (Desktop y Mobile Overlay) */}
       <aside className={`
         fixed md:static inset-y-0 left-0 w-[280px] bg-[#0B0D12] border-r border-[#1F2330] flex flex-col z-[100] transition-transform duration-500 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
@@ -77,12 +77,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
 
         <div className="p-6 border-t border-[#1F2330] mt-auto shrink-0 md:block hidden">
           <div className="flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-[#646B7B] uppercase tracking-widest">
-            Cognición v1.5
+            Cognición v1.6
           </div>
         </div>
       </aside>
 
-      {/* Barra Inferior Móvil (Acceso rápido) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 glass border-t border-[#1F2330] px-2 py-3 pb-8 flex justify-around items-center z-[100] safe-area-bottom">
         {mobileBottomItems.map((item) => {
           const isActive = activeView === item.id;
