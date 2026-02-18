@@ -23,11 +23,7 @@ export const googleApi = {
       const detail = errData.error?.message || "Error desconocido";
 
       if (status === 401) {
-        throw new Error("SESSION_EXPIRED: Tu sesión de Google ha caducado. Por favor, ve a Ajustes y vuelve a Conectar.");
-      }
-      
-      if (status === 403) {
-        throw new Error(`PERMISO_DENEGADO: No tienes permiso para esta acción. Asegúrate de marcar todas las casillas (Drive y Sheets) al conectar tu cuenta.`);
+        throw new Error("SESSION_EXPIRED: Tu sesión de Google ha caducado.");
       }
       
       throw new Error(`Error ${status}: ${detail}`);
@@ -56,31 +52,8 @@ export const googleApi = {
     return data.files && data.files.length > 0 ? data.files[0] : null;
   },
 
-  async createFolder(token: string, name: string, parentId?: string) {
-    const body: any = {
-      name,
-      mimeType: 'application/vnd.google-apps.folder',
-    };
-    if (parentId) body.parents = [parentId];
-
-    const response = await this.fetchWithAuth(
-      'https://www.googleapis.com/drive/v3/files',
-      token,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }
-    );
-    return await response.json();
-  },
-
   async uploadFile(token: string, blob: Blob, fileName: string, folderId: string) {
-    const metadata = {
-      name: fileName,
-      parents: [folderId],
-    };
-
+    const metadata = { name: fileName, parents: [folderId] };
     const formData = new FormData();
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     formData.append('file', blob);
@@ -88,10 +61,7 @@ export const googleApi = {
     const response = await this.fetchWithAuth(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
       token,
-      {
-        method: 'POST',
-        body: formData,
-      }
+      { method: 'POST', body: formData }
     );
     return await response.json();
   },
@@ -132,10 +102,10 @@ export const googleApi = {
     );
 
     await this.appendRow(spreadsheetId, 'ENTRADAS', [
-      'ID_ENTRADA', 'FECHA_CREACION', 'TITULO', 'RESUMEN', 'ESTADO_EMOCIONAL', 'TAGS', 'DRIVE_FILE_ID', 'DRIVE_WEBVIEW_LINK', 'SNIPPETS'
+      'ID_ENTRADA', 'FECHA_CREACION', 'TITULO', 'RESUMEN', 'ESTADO_EMOCIONAL', 'TAGS', 'DRIVE_FILE_ID', 'DRIVE_WEBVIEW_LINK', 'SNIPPETS', 'TRANSCRIPCION_COMPLETA'
     ], token);
     await this.appendRow(spreadsheetId, 'TAREAS', [
-      'ID_TAREA', 'FECHA_CREACION', 'DESCRIPCION', 'PRIORIDAD', 'ESTADO', 'ID_ENTRADA_ORIGEN', 'FECHA_LIMITE'
+      'ID_TAREA', 'FECHA_CREACION', 'DESCRIPCION', 'PRIORIDAD', 'ESTADO', 'ID_ENTRADA_ORIGEN', 'FECHA_LIMITE', 'FECHA_COMPLETADA'
     ], token);
 
     return spreadsheetId;
@@ -162,14 +132,62 @@ export const googleApi = {
     return data.values || [];
   },
 
-  async updateTaskStatus(spreadsheetId: string, rowNumber: number, status: string, token: string) {
+  async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
+    const rows = await this.getRows(spreadsheetId, sheetName, token);
+    const rowIndex = rows.findIndex(row => row[0] === id);
+    if (rowIndex === -1) return;
+
+    const ssMetadata = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
+    const ssData = await ssMetadata.json();
+    const sheet = ssData.sheets.find((s: any) => s.properties.title === sheetName);
+    const sheetId = sheet.properties.sheetId;
+
     await this.fetchWithAuth(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/TAREAS!E${rowNumber}?valueInputOption=RAW`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
       token,
       {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [[status]] }),
+        body: JSON.stringify({
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: sheetId,
+                  dimension: 'ROWS',
+                  startIndex: rowIndex,
+                  endIndex: rowIndex + 1
+                }
+              }
+            }
+          ]
+        })
+      }
+    );
+  },
+
+  async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
+    const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
+    const rowIndex = rows.findIndex(row => row[0] === id);
+    if (rowIndex === -1) return;
+
+    const rowNum = rowIndex + 1;
+    // Estado está en columna E (5), Fecha Completada está en columna H (8)
+    const body = {
+      valueInputOption: 'RAW',
+      data: [
+        { range: `TAREAS!E${rowNum}`, values: [[status]] },
+        { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }
+      ]
+    };
+
+    await this.fetchWithAuth(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+      token,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       }
     );
   }

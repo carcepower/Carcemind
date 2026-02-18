@@ -21,6 +21,8 @@ export interface GoogleConfig {
   spreadsheetId: string | null;
 }
 
+export type TaskStatus = 'pendiente' | 'en marcha' | 'terminada' | 'anulada';
+
 export interface Memory {
   id: string;
   date?: string;
@@ -44,10 +46,11 @@ export interface Task {
   title: string;
   description?: string;
   priority: 'low' | 'medium' | 'high';
-  status: 'pending' | 'completed';
+  status: TaskStatus;
   completed: boolean;
   originId: string;
   deadline: Date;
+  completedAt?: Date | null;
 }
 
 export interface Message {

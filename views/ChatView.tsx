@@ -23,7 +23,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
   }, [messages, isTyping]);
 
   const getApiKey = () => {
-    // Intenta obtener la clave de todas las fuentes posibles en el cliente
     return (import.meta as any).env?.VITE_API_KEY || 
            (process.env as any)?.VITE_API_KEY || 
            process.env.API_KEY;
@@ -38,23 +37,39 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
 
     try {
       const apiKey = getApiKey();
-      
-      if (!apiKey) {
-        throw new Error("API_KEY_NOT_FOUND");
-      }
+      if (!apiKey) throw new Error("API_KEY_NOT_FOUND");
 
       const ai = new GoogleGenAI({ apiKey });
+      
+      // Construimos un contexto denso para Gemini
+      const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
+      
+      const systemInstruction = `
+        Eres el "Consultor Cognitivo" de CarceMind. Tu función es ayudar al usuario (Pablo) a navegar por su memoria externa.
+        Tienes acceso a un índice de sus recuerdos (memorias) y tareas.
+        
+        INSTRUCCIONES:
+        1. Si el usuario pregunta por eventos pasados, usa el contexto de memorias proporcionado.
+        2. Si el usuario pregunta por tareas, infiere qué debe hacer basándote en los resúmenes.
+        3. Si no encuentras una respuesta clara en el contexto corto, sugiere que puede haber más detalles en las transcripciones completas del Excel.
+        4. Responde con un tono profesional, analítico y empático.
+        
+        CONTEXTO DE MEMORIAS RECIENTES:
+        ${memoryContext}
+      `;
+
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Contexto memorias: ${JSON.stringify(memories.slice(0, 5))}\n\nPregunta: ${input}`
+        contents: input,
+        config: {
+          systemInstruction,
+          temperature: 0.7
+        }
       });
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
     } catch (err: any) {
-      const errorText = err.message === "API_KEY_NOT_FOUND" 
-        ? "El sistema no detecta la variable VITE_API_KEY. Asegúrate de haber hecho un 'Redeploy' en Vercel tras añadirla."
-        : "Error de conexión con Gemini. Revisa la validez de tu clave en Google AI Studio.";
-      
+      const errorText = "Error de conexión con el motor Gemini. Verifica tu clave de API en Vercel o AI Studio.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -67,7 +82,10 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center">
           <BrainCircuit className="text-white" />
         </div>
-        <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
+          <p className="text-[#646B7B] text-xs">Analizando {memories.length} bloques de memoria.</p>
+        </div>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-8 pr-4">
@@ -76,7 +94,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-[#151823]' : 'bg-[#5E7BFF]'}`}>
               {msg.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
             </div>
-            <div className={`p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-[#151823] text-right' : 'bg-white/5'}`}>
+            <div className={`p-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-[#151823] text-right border border-[#1F2330]' : 'bg-white/5 border border-white/5'}`}>
               {msg.text}
             </div>
           </div>

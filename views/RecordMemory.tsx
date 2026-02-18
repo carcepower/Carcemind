@@ -80,18 +80,18 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       });
 
       const prompt = `
-        Analiza este audio y genera un JSON con la siguiente estructura:
+        Analiza este audio y genera un JSON estrictamente válido:
         {
           "title": "título corto",
           "summary": "resumen ejecutivo",
-          "emotionalState": "estado de ánimo detectado",
+          "emotionalState": "estado de ánimo",
           "tags": ["tag1", "tag2"],
-          "snippets": ["frase clave 1", "frase clave 2"],
+          "snippets": ["frase clave 1"],
+          "fullTranscript": "Transcripción íntegra palabra por palabra del audio",
           "tasks": [
             {"title": "descripción de la tarea", "priority": "low|medium|high", "daysToDeadline": 1}
           ]
         }
-        Si no hay tareas, el array "tasks" debe estar vacío.
       `;
 
       const result = await ai.models.generateContent({
@@ -104,7 +104,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
-      // Guardar Memoria
+      // Guardar Memoria (Columna J es la 10ª: TRANSCRIPCION_COMPLETA)
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
         entryId, 
         new Date().toISOString(), 
@@ -114,10 +114,11 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         data.tags?.join(', '), 
         driveFile.id, 
         driveFile.webViewLink, 
-        data.snippets?.join(' | ')
+        data.snippets?.join(' | '),
+        data.fullTranscript
       ], googleConfig.accessToken!);
 
-      // Guardar Tareas detectadas (si existen)
+      // Guardar Tareas detectadas
       if (data.tasks && data.tasks.length > 0) {
         for (const task of data.tasks) {
           const deadlineDate = new Date();
@@ -136,7 +137,14 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       }
 
       setStatus('finished');
-      onMemoryAdded({ id: entryId, title: data.title, excerpt: data.summary, timestamp: new Date(), type: 'voice' });
+      onMemoryAdded({ 
+        id: entryId, 
+        title: data.title, 
+        excerpt: data.summary, 
+        timestamp: new Date(), 
+        type: 'voice',
+        content: data.fullTranscript 
+      });
     } catch (err: any) {
       console.error(err);
       setStatus('error');
@@ -148,7 +156,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Tu voz se procesa y se extraen tareas automáticamente.</p>
+        <p className="text-[#A0A6B1]">Tu voz se procesa y se extrae la transcripción completa.</p>
       </div>
 
       <button
@@ -162,7 +170,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria y Tareas Guardadas!' : status === 'error' ? 'Error' : status + '...'}
+            {status === 'finished' ? '¡Memoria y Transcripción Guardadas!' : status === 'error' ? 'Error' : status + '...'}
           </p>
           {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
         </div>

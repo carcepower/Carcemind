@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewType, Memory, Task, Message, GoogleConfig } from './types';
+import { ViewType, Memory, Task, Message, GoogleConfig, TaskStatus } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './views/Dashboard';
 import RecordMemory from './views/RecordMemory';
@@ -39,17 +39,19 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
   }, [googleConfig]);
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
-        setIsInitialLoading(true);
-        try {
-          const [memRows, taskRows] = await Promise.all([
-            googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
-            googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken)
-          ]);
+  const loadData = async () => {
+    if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
+      setIsInitialLoading(true);
+      try {
+        const [memRows, taskRows] = await Promise.all([
+          googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
+          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken)
+        ]);
 
-          const loadedMemories: Memory[] = memRows.slice(1).map((row: any) => ({
+        const loadedMemories: Memory[] = memRows
+          .slice(1)
+          .filter((row: any) => row[0])
+          .map((row: any) => ({
             id: row[0],
             timestamp: new Date(row[1]),
             title: row[2],
@@ -59,40 +61,66 @@ const App: React.FC = () => {
             driveFileId: row[6],
             driveViewLink: row[7],
             snippets: row[8] ? row[8].split(' | ') : [],
+            content: row[9] || "",
             type: 'voice'
           })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
-          const loadedTasks: Task[] = taskRows.slice(1).map((row: any) => ({
+        const loadedTasks: Task[] = taskRows
+          .slice(1)
+          .filter((row: any) => row[0])
+          .map((row: any) => ({
             id: row[0],
             date: row[1],
-            title: row[2],
-            priority: row[3] as any,
-            status: row[4] as any,
-            completed: row[4] === 'completed',
+            title: row[2] || "Tarea sin título",
+            priority: (row[3] || 'medium').toLowerCase() as any,
+            status: (row[4] || 'pendiente').toLowerCase() as TaskStatus,
+            completed: (row[4] || '').toLowerCase() === 'terminada',
             originId: row[5],
-            deadline: row[6] ? new Date(row[6]) : new Date()
+            deadline: row[6] ? new Date(row[6]) : new Date(),
+            completedAt: row[7] ? new Date(row[7]) : null
           }));
 
-          setMemories(loadedMemories);
-          setTasks(loadedTasks);
-        } catch (error) {
-          console.error("Error cargando datos:", error);
-        } finally {
-          setIsInitialLoading(false);
-        }
+        setMemories(loadedMemories);
+        setTasks(loadedTasks);
+      } catch (error) {
+        console.error("Error cargando datos:", error);
+      } finally {
+        setIsInitialLoading(false);
       }
-    };
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, [googleConfig.isConnected, googleConfig.spreadsheetId, googleConfig.accessToken]);
+
+  const handleDeleteMemory = async (id: string) => {
+    if (!googleConfig.accessToken || !googleConfig.spreadsheetId) return;
+    try {
+      await googleApi.deleteRowById(googleConfig.spreadsheetId, 'ENTRADAS', id, googleConfig.accessToken);
+      setMemories(prev => prev.filter(m => m.id !== id));
+    } catch (e) {
+      console.error("Error al borrar memoria del Excel:", e);
+    }
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    if (!googleConfig.accessToken || !googleConfig.spreadsheetId) return;
+    try {
+      await googleApi.deleteRowById(googleConfig.spreadsheetId, 'TAREAS', id, googleConfig.accessToken);
+      setTasks(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      console.error("Error al borrar tarea del Excel:", e);
+    }
+  };
 
   const renderView = () => {
     switch (activeView) {
       case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} />;
-      case ViewType.RECORD: return <RecordMemory onMemoryAdded={(m) => { setMemories([m, ...memories]); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
+      case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
       case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} />;
-      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} />;
-      case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={(id) => setMemories(prev => prev.filter(m => m.id !== id))} />;
-      case ViewType.REMINDERS: return <RemindersView />;
+      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} />;
+      case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
       case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
       case ViewType.INSTRUCTIONS: return <InstructionsView />;
       default: return <Dashboard memories={memories} tasks={tasks} />;
