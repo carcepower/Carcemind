@@ -104,7 +104,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
-      // Guardar Memoria (Columna J es la 10ª: TRANSCRIPCION_COMPLETA)
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
         entryId, 
         new Date().toISOString(), 
@@ -118,7 +117,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         data.fullTranscript
       ], googleConfig.accessToken!);
 
-      // Guardar Tareas detectadas
       if (data.tasks && data.tasks.length > 0) {
         for (const task of data.tasks) {
           const deadlineDate = new Date();
@@ -129,9 +127,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             new Date().toISOString(),
             task.title,
             task.priority || 'medium',
-            'pending',
+            'pendiente', // Usar español para consistencia
             entryId,
-            deadlineDate.toISOString()
+            deadlineDate.toISOString(),
+            '' // Columna FECHA_COMPLETADA vacía inicialmente
           ], googleConfig.accessToken!);
         }
       }

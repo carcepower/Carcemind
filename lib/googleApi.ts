@@ -10,11 +10,16 @@ export const googleApi = {
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     
+    // Asegurar Content-Type si hay un body
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
     let response;
     try {
       response = await fetch(url, { ...options, headers });
     } catch (e) {
-      throw new Error("ERROR_RED: No se pudo contactar con los servidores de Google. Revisa tu conexión.");
+      throw new Error("ERROR_RED: No se pudo contactar con los servidores de Google.");
     }
     
     if (!response.ok) {
@@ -72,7 +77,6 @@ export const googleApi = {
       token,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ properties: { title: name } }),
       }
     );
@@ -90,7 +94,6 @@ export const googleApi = {
       token,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: [
             { addSheet: { properties: { title: 'ENTRADAS' } } },
@@ -117,7 +120,6 @@ export const googleApi = {
       token,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ values: [values] }),
       }
     );
@@ -135,7 +137,10 @@ export const googleApi = {
   async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
     const rows = await this.getRows(spreadsheetId, sheetName, token);
     const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) return;
+    if (rowIndex === -1) {
+      console.warn(`No se encontró la fila con ID ${id} para eliminar.`);
+      return;
+    }
 
     const ssMetadata = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
     const ssData = await ssMetadata.json();
@@ -147,7 +152,6 @@ export const googleApi = {
       token,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: [
             {
@@ -169,10 +173,11 @@ export const googleApi = {
   async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
     const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
     const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) return;
+    if (rowIndex === -1) {
+      throw new Error(`Tarea con ID ${id} no encontrada en el Excel.`);
+    }
 
     const rowNum = rowIndex + 1;
-    // Estado está en columna E (5), Fecha Completada está en columna H (8)
     const body = {
       valueInputOption: 'RAW',
       data: [
@@ -186,7 +191,6 @@ export const googleApi = {
       token,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }
     );

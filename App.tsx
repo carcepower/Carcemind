@@ -39,6 +39,15 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
   }, [googleConfig]);
 
+  const normalizeStatus = (status: string): TaskStatus => {
+    const s = (status || '').toLowerCase();
+    if (s === 'pending' || s === 'pendiente') return 'pendiente';
+    if (s === 'in progress' || s === 'en marcha') return 'en marcha';
+    if (s === 'completed' || s === 'terminada') return 'terminada';
+    if (s === 'cancelled' || s === 'anulada') return 'anulada';
+    return 'pendiente';
+  };
+
   const loadData = async () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
@@ -73,8 +82,8 @@ const App: React.FC = () => {
             date: row[1],
             title: row[2] || "Tarea sin título",
             priority: (row[3] || 'medium').toLowerCase() as any,
-            status: (row[4] || 'pendiente').toLowerCase() as TaskStatus,
-            completed: (row[4] || '').toLowerCase() === 'terminada',
+            status: normalizeStatus(row[4]),
+            completed: normalizeStatus(row[4]) === 'terminada',
             originId: row[5],
             deadline: row[6] ? new Date(row[6]) : new Date(),
             completedAt: row[7] ? new Date(row[7]) : null
