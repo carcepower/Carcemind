@@ -1,16 +1,20 @@
 
 import React from 'react';
 import { Memory, Task } from '../types';
-import { TrendingUp, CheckCircle, Database, Calendar } from 'lucide-react';
+import { TrendingUp, CheckCircle, Database, Calendar, RefreshCw } from 'lucide-react';
 
 interface DashboardProps {
   memories: Memory[];
   tasks: Task[];
+  onRefresh: () => Promise<void>;
+  isLoading: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ memories, tasks }) => {
-  const pendingTasks = tasks.filter(t => !t.completed).length;
-  const nextTask = tasks.filter(t => !t.completed).sort((a,b) => a.deadline.getTime() - b.deadline.getTime())[0];
+const Dashboard: React.FC<DashboardProps> = ({ memories, tasks, onRefresh, isLoading }) => {
+  const pendingTasks = tasks.filter(t => t.status !== 'terminada' && t.status !== 'anulada').length;
+  const nextTask = tasks
+    .filter(t => t.status !== 'terminada' && t.status !== 'anulada')
+    .sort((a,b) => a.deadline.getTime() - b.deadline.getTime())[0];
 
   const stats = [
     { label: 'Memorias Totales', value: memories.length, icon: Database, color: '#5E7BFF' },
@@ -19,10 +23,20 @@ const Dashboard: React.FC<DashboardProps> = ({ memories, tasks }) => {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <header className="space-y-2">
-        <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-medium">Resumen de Hoy</p>
-        <h2 className="text-4xl font-semibold tracking-tight">Bienvenido, CarceMind está listo.</h2>
+    <div className="max-w-6xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div className="space-y-2">
+          <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-medium">Resumen de Hoy</p>
+          <h2 className="text-4xl font-semibold tracking-tight">Bienvenido, CarceMind está listo.</h2>
+        </div>
+        <button 
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#151823] border border-[#1F2330] text-[#A0A6B1] hover:text-white transition-all active:scale-95 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#5E7BFF]' : ''}`} />
+          <span className="text-[10px] font-bold uppercase tracking-widest">Sincronizar Cloud</span>
+        </button>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -46,7 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ memories, tasks }) => {
             <span className="text-[#A0A6B1] text-xs">Últimos 7 días</span>
           </div>
           <div className="space-y-6">
-            {memories.slice(0, 3).map(memory => (
+            {memories.length > 0 ? memories.slice(0, 3).map(memory => (
               <div key={memory.id} className="flex gap-6 group cursor-pointer">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#5E7BFF] mt-2 group-hover:scale-150 transition-transform" />
                 <div className="flex-1 space-y-1">
@@ -55,7 +69,9 @@ const Dashboard: React.FC<DashboardProps> = ({ memories, tasks }) => {
                 </div>
                 <span className="text-[#646B7B] text-xs font-mono">{new Date(memory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-            ))}
+            )) : (
+              <p className="text-[#646B7B] text-sm italic py-4">Sin actividad reciente.</p>
+            )}
           </div>
         </section>
 
@@ -66,13 +82,14 @@ const Dashboard: React.FC<DashboardProps> = ({ memories, tasks }) => {
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Calendar className="w-5 h-5 text-[#8A6CFF]" />
-                  <span className="text-[#A0A6B1] text-sm">{nextTask.deadline.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+                  <span className="text-[#A0A6B1] text-sm">{new Date(nextTask.deadline).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
                 </div>
                 <h5 className="text-2xl font-medium leading-tight">{nextTask.title}</h5>
               </div>
-              <button className="mt-8 px-6 py-4 rounded-2xl bg-[#151823] border border-[#1F2330] hover:bg-[#1F2330] text-sm font-medium transition-colors">
-                Ver todas las tareas
-              </button>
+              <div className="mt-8 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#151823] border border-[#1F2330] w-fit">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#646B7B]">Estado:</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">{nextTask.status}</span>
+              </div>
             </div>
           ) : (
             <p className="text-[#A0A6B1] italic">No hay tareas pendientes.</p>

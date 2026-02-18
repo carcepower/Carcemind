@@ -9,9 +9,11 @@ interface TasksViewProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   googleConfig: GoogleConfig;
   onDeleteTask: (id: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  isLoading: boolean;
 }
 
-const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig, onDeleteTask }) => {
+const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig, onDeleteTask, onRefresh, isLoading }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
 
@@ -65,17 +67,21 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig, on
   const filteredTasks = filter === 'all' ? tasks : tasks.filter(t => t.status === filter);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in slide-in-from-left-4 duration-500 pb-20">
+    <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in slide-in-from-left-4 duration-500 pb-32">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div className="space-y-2">
           <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-medium">Cognición Activa</p>
           <div className="flex items-center gap-4">
             <h2 className="text-4xl font-semibold tracking-tight">Gestión de Tareas</h2>
             {googleConfig.isConnected && (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#10B981]/10 border border-[#10B981]/20 text-[#10B981] text-[10px] font-bold uppercase tracking-tighter">
-                {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Table className="w-3 h-3" />}
-                {isSyncing ? 'Sincronizando...' : 'Live Sync'}
-              </div>
+              <button 
+                onClick={onRefresh}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#151823] border border-[#1F2330] text-[#A0A6B1] text-[10px] font-bold uppercase tracking-tighter hover:text-white transition-all disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoading || isSyncing ? 'animate-spin text-[#5E7BFF]' : ''}`} />
+                {isLoading || isSyncing ? 'Sincronizando...' : 'Live Sync'}
+              </button>
             )}
           </div>
         </div>

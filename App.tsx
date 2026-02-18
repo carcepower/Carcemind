@@ -125,20 +125,20 @@ const App: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} />;
+      case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
       case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} />;
-      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} />;
+      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
       case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
       case ViewType.INSTRUCTIONS: return <InstructionsView />;
-      default: return <Dashboard memories={memories} tasks={tasks} />;
+      default: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
     }
   };
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0B0D12] text-[#F5F7FA] overflow-hidden">
-      <div className="md:hidden flex items-center justify-between p-6 glass border-b border-[#1F2330] z-[60]">
+      <div className="md:hidden flex items-center justify-between p-6 glass border-b border-[#1F2330] z-[60] safe-area-top">
         <h1 className="text-xl font-bold tracking-tighter bg-gradient-to-r from-[#5E7BFF] to-[#8A6CFF] bg-clip-text text-transparent">CarceMind</h1>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-[#A0A6B1]">
           {isMobileMenuOpen ? <X /> : <Menu />}
@@ -147,10 +147,10 @@ const App: React.FC = () => {
 
       <Sidebar activeView={activeView} onViewChange={(v) => { setActiveView(v); setIsMobileMenuOpen(false); }} isMobileMenuOpen={isMobileMenuOpen} />
 
-      <main className="flex-1 overflow-y-auto relative p-6 md:p-12 pb-24 md:pb-12">
+      <main className="flex-1 overflow-y-auto relative p-6 md:p-12 pb-32 md:pb-12">
         <div className="max-w-7xl mx-auto">
           {isInitialLoading && (
-            <div className="fixed top-8 right-8 flex items-center gap-3 bg-[#151823] border border-[#1F2330] px-4 py-2 rounded-full z-[100] animate-in fade-in slide-in-from-top-4 shadow-2xl">
+            <div className="fixed top-8 right-8 hidden md:flex items-center gap-3 bg-[#151823] border border-[#1F2330] px-4 py-2 rounded-full z-[100] animate-in fade-in slide-in-from-top-4 shadow-2xl">
               <RefreshCw className="w-4 h-4 animate-spin text-[#5E7BFF]" />
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Sincronizando Cerebro...</span>
             </div>
