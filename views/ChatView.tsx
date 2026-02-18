@@ -22,6 +22,13 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [messages, isTyping]);
 
+  const getApiKey = () => {
+    // Intenta obtener la clave de todas las fuentes posibles en el cliente
+    return (import.meta as any).env?.VITE_API_KEY || 
+           (process.env as any)?.VITE_API_KEY || 
+           process.env.API_KEY;
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
@@ -30,7 +37,12 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      const apiKey = getApiKey();
+      
+      if (!apiKey) {
+        throw new Error("API_KEY_NOT_FOUND");
+      }
+
       const ai = new GoogleGenAI({ apiKey });
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -39,7 +51,11 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: 'Error de conexión con el motor Gemini. Verifica tu clave VITE_API_KEY.', timestamp: new Date() }]);
+      const errorText = err.message === "API_KEY_NOT_FOUND" 
+        ? "El sistema no detecta la variable VITE_API_KEY. Asegúrate de haber hecho un 'Redeploy' en Vercel tras añadirla."
+        : "Error de conexión con Gemini. Revisa la validez de tu clave en Google AI Studio.";
+      
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
@@ -65,7 +81,16 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
             </div>
           </div>
         ))}
-        {isTyping && <Loader2 className="animate-spin text-[#5E7BFF]" />}
+        {isTyping && (
+          <div className="flex gap-4 animate-pulse">
+            <div className="w-8 h-8 rounded-lg bg-[#5E7BFF] flex items-center justify-center shrink-0">
+              <Sparkles size={16} className="animate-spin" />
+            </div>
+            <div className="p-4 rounded-2xl bg-white/5 text-xs text-[#646B7B]">
+              Consultando red neuronal...
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-8 relative">
@@ -77,7 +102,11 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
           placeholder="Consulta tu cerebro..."
           className="w-full glass border border-[#1F2330] rounded-2xl py-5 px-6 outline-none focus:border-[#5E7BFF] transition-all"
         />
-        <button onClick={handleSend} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white text-black rounded-xl">
+        <button 
+          onClick={handleSend} 
+          disabled={isTyping}
+          className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white text-black rounded-xl disabled:opacity-50"
+        >
           <Send size={18} />
         </button>
       </div>

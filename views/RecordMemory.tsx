@@ -19,6 +19,12 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
+  const getApiKey = () => {
+    return (import.meta as any).env?.VITE_API_KEY || 
+           (process.env as any)?.VITE_API_KEY || 
+           process.env.API_KEY;
+  };
+
   const startRecording = async () => {
     if (!googleConfig.isConnected) {
       setStatus('error');
@@ -60,8 +66,12 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      // Usamos la variable con prefijo VITE_ para asegurar visibilidad en el cliente
-      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      const apiKey = getApiKey();
+      
+      if (!apiKey) {
+        throw new Error("VITE_API_KEY no encontrada en el entorno de producción.");
+      }
+
       const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
@@ -107,7 +117,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       {status !== 'idle' && (
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
-          <p className="font-bold uppercase tracking-widest text-sm">{status === 'finished' ? '¡Memoria Guardada!' : status + '...'}</p>
+          <p className="font-bold uppercase tracking-widest text-sm">
+            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Error' : status + '...'}
+          </p>
           {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
         </div>
       )}
