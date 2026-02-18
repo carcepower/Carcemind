@@ -7,7 +7,8 @@ export enum ViewType {
   MEMORIES = 'MEMORIES',
   REMINDERS = 'REMINDERS',
   SETTINGS = 'SETTINGS',
-  INSTRUCTIONS = 'INSTRUCTIONS'
+  INSTRUCTIONS = 'INSTRUCTIONS',
+  MAIL = 'MAIL'
 }
 
 export interface GoogleConfig {
@@ -19,6 +20,12 @@ export interface GoogleConfig {
   sheetFolderId: string | null;
   sheetFolderName: string | null;
   spreadsheetId: string | null;
+}
+
+export interface GmailConfig {
+  isConnected: boolean;
+  email: string | null;
+  accessToken: string | null;
 }
 
 export type TaskStatus = 'pendiente' | 'en marcha' | 'terminada' | 'anulada';

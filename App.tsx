@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewType, Memory, Task, Message, GoogleConfig, TaskStatus } from './types';
+import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig, TaskStatus } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './views/Dashboard';
 import RecordMemory from './views/RecordMemory';
@@ -10,6 +10,7 @@ import MemoriesView from './views/MemoriesView';
 import RemindersView from './views/RemindersView';
 import SettingsView from './views/SettingsView';
 import InstructionsView from './views/InstructionsView';
+import CarceMailView from './views/CarceMailView';
 import { googleApi } from './lib/googleApi';
 import { Menu, X, RefreshCw } from 'lucide-react';
 
@@ -32,12 +33,25 @@ const App: React.FC = () => {
     };
   });
 
+  const [gmailConfig, setGmailConfig] = useState<GmailConfig>(() => {
+    const saved = localStorage.getItem('carcemind_gmail_config');
+    return saved ? JSON.parse(saved) : {
+      isConnected: false,
+      email: null,
+      accessToken: null
+    };
+  });
+
   const [memories, setMemories] = useState<Memory[]>([]); 
   const [tasks, setTasks] = useState<Task[]>([]);
 
   useEffect(() => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
   }, [googleConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('carcemind_gmail_config', JSON.stringify(gmailConfig));
+  }, [gmailConfig]);
 
   const normalizeStatus = (status: string): TaskStatus => {
     const s = (status || '').toLowerCase();
@@ -128,6 +142,7 @@ const App: React.FC = () => {
       case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
       case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} />;
+      case ViewType.MAIL: return <CarceMailView config={gmailConfig} setConfig={setGmailConfig} />;
       case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
       case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;

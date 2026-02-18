@@ -10,7 +10,6 @@ export const googleApi = {
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     
-    // Asegurar Content-Type si hay un body
     if (options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
@@ -37,6 +36,7 @@ export const googleApi = {
     return response;
   },
 
+  // DRIVE & SHEETS
   async listFolders(token: string) {
     const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     const response = await this.fetchWithAuth(
@@ -137,10 +137,7 @@ export const googleApi = {
   async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
     const rows = await this.getRows(spreadsheetId, sheetName, token);
     const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) {
-      console.warn(`No se encontró la fila con ID ${id} para eliminar.`);
-      return;
-    }
+    if (rowIndex === -1) return;
 
     const ssMetadata = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
     const ssData = await ssMetadata.json();
@@ -153,19 +150,8 @@ export const googleApi = {
       {
         method: 'POST',
         body: JSON.stringify({
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId: sheetId,
-                  dimension: 'ROWS',
-                  startIndex: rowIndex,
-                  endIndex: rowIndex + 1
-                }
-              }
-            }
-          ]
-        })
+          requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }]
+        }),
       }
     );
   },
@@ -173,26 +159,36 @@ export const googleApi = {
   async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
     const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
     const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) {
-      throw new Error(`Tarea con ID ${id} no encontrada en el Excel.`);
-    }
+    if (rowIndex === -1) throw new Error(`Tarea con ID ${id} no encontrada.`);
 
     const rowNum = rowIndex + 1;
-    const body = {
-      valueInputOption: 'RAW',
-      data: [
-        { range: `TAREAS!E${rowNum}`, values: [[status]] },
-        { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }
-      ]
-    };
-
     await this.fetchWithAuth(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
       token,
       {
         method: 'POST',
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+          valueInputOption: 'RAW',
+          data: [
+            { range: `TAREAS!E${rowNum}`, values: [[status]] },
+            { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }
+          ]
+        })
       }
     );
+  },
+
+  // GMAIL API
+  async searchGmail(token: string, query: string, maxResults: number = 5) {
+    const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`;
+    const response = await this.fetchWithAuth(url, token);
+    const data = await response.json();
+    return data.messages || [];
+  },
+
+  async getGmailMessage(token: string, id: string) {
+    const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`;
+    const response = await this.fetchWithAuth(url, token);
+    return await response.json();
   }
 };
