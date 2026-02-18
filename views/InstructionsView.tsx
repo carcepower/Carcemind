@@ -7,9 +7,7 @@ import {
   Mic, 
   Database, 
   BrainCircuit, 
-  UserPlus,
   AlertTriangle,
-  Info,
   ShieldCheck,
   Lock,
   Zap,
@@ -85,7 +83,7 @@ const InstructionsView: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-tight">Imprescindible para evitar el Error 403</span>
           </div>
           <p className="text-[11px] text-[#A0A6B1] leading-relaxed">
-            Para usar tu cuenta de Gmail (o cualquier otra), debes ir a la <b>Google Cloud Console</b> > <b>OAuth Consent Screen</b> > <b>Test Users</b> y añadir el email. Google bloquea por defecto cualquier cuenta que no esté en esa lista mientras la app no sea pública.
+            Para usar tu cuenta de Gmail (o cualquier otra), debes ir a la <b>Google Cloud Console</b> {' > '} <b>OAuth Consent Screen</b> {' > '} <b>Test Users</b> y añadir el email. Google bloquea por defecto cualquier cuenta que no esté en esa lista mientras la app no sea pública.
           </p>
           <div className="flex gap-4 pt-2">
              <a href="https://console.cloud.google.com/" target="_blank" className="text-[10px] font-bold text-white underline flex items-center gap-1">
