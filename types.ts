@@ -6,7 +6,8 @@ export enum ViewType {
   TASKS = 'TASKS',
   MEMORIES = 'MEMORIES',
   REMINDERS = 'REMINDERS',
-  SETTINGS = 'SETTINGS'
+  SETTINGS = 'SETTINGS',
+  INSTRUCTIONS = 'INSTRUCTIONS'
 }
 
 export interface GoogleConfig {
@@ -20,7 +21,6 @@ export interface GoogleConfig {
   spreadsheetId: string | null;
 }
 
-// Memory interface renamed from MemoryEntry and expanded to satisfy component and API needs
 export interface Memory {
   id: string;
   date?: string;
@@ -38,7 +38,6 @@ export interface Memory {
   content?: string;
 }
 
-// Task interface renamed from TaskEntry and expanded to satisfy component and API needs
 export interface Task {
   id: string;
   date: string;

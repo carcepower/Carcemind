@@ -7,10 +7,9 @@ import {
   MessageSquare, 
   CheckSquare, 
   History, 
-  Clock, 
   Settings,
   BrainCircuit,
-  Menu
+  BookOpen
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -26,11 +25,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
     { id: ViewType.CHAT, label: 'CONSULTOR', icon: MessageSquare },
     { id: ViewType.TASKS, label: 'TAREAS', icon: CheckSquare },
     { id: ViewType.MEMORIES, label: 'CRONOLOGÍA', icon: History },
+    { id: ViewType.INSTRUCTIONS, label: 'INSTRUCCIONES', icon: BookOpen },
   ];
 
   return (
     <>
-      {/* Desktop & Mobile Overlay Sidebar */}
       <aside className={`
         fixed md:static inset-y-0 left-0 w-[280px] bg-[#0B0D12] border-r border-[#1F2330] flex flex-col z-[100] transition-transform duration-500 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
@@ -76,22 +75,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
         </div>
       </aside>
 
-      {/* Mobile Bottom Dock (Apple-style) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 glass border-t border-[#1F2330] px-4 py-3 flex justify-around items-center z-[100] safe-area-bottom">
-        {navItems.slice(0, 5).map((item) => {
+        {navItems.slice(0, 4).map((item) => {
           const isActive = activeView === item.id;
           return (
-            <button
-              key={item.id}
-              onClick={() => onViewChange(item.id)}
-              className="flex flex-col items-center gap-1 min-w-[64px]"
-            >
-              <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-[#5E7BFF] text-white shadow-lg shadow-[#5E7BFF44]' : 'text-[#646B7B]'}`}>
+            <button key={item.id} onClick={() => onViewChange(item.id)} className="flex flex-col items-center gap-1 min-w-[64px]">
+              <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-[#5E7BFF] text-white shadow-lg' : 'text-[#646B7B]'}`}>
                 <item.icon className="w-6 h-6" />
               </div>
-              <span className={`text-[10px] font-bold uppercase tracking-tighter ${isActive ? 'text-white' : 'text-[#646B7B]'}`}>
-                {item.label.split(' ')[0]}
-              </span>
             </button>
           );
         })}

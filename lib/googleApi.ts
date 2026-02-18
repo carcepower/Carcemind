@@ -1,9 +1,6 @@
 
 import { GoogleConfig, Memory, Task } from '../types';
 
-/**
- * Helper to interact with Google APIs using the access token.
- */
 export const googleApi = {
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
     if (!token) {
@@ -47,6 +44,16 @@ export const googleApi = {
     );
     const data = await response.json();
     return data.files || [];
+  },
+
+  async findFileInFolder(token: string, fileName: string, folderId: string) {
+    const query = encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`);
+    const response = await this.fetchWithAuth(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`,
+      token
+    );
+    const data = await response.json();
+    return data.files && data.files.length > 0 ? data.files[0] : null;
   },
 
   async createFolder(token: string, name: string, parentId?: string) {

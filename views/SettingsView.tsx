@@ -10,9 +10,11 @@ import {
   Database,
   LogOut,
   Brain,
-  Zap,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Search,
+  FileSpreadsheet,
+  PlusCircle
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -28,12 +30,38 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
+  const [fileFoundStatus, setFileFoundStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) {
       loadFolders();
     }
   }, [config.isConnected, config.accessToken]);
+
+  // Al cambiar la carpeta de hojas, buscamos el archivo automáticamente
+  useEffect(() => {
+    if (config.isConnected && config.accessToken && config.sheetFolderId) {
+      checkForSpreadsheet();
+    }
+  }, [config.sheetFolderId]);
+
+  const checkForSpreadsheet = async () => {
+    if (!config.accessToken || !config.sheetFolderId) return;
+    setFileFoundStatus('searching');
+    try {
+      const file = await googleApi.findFileInFolder(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
+      if (file) {
+        setConfig(prev => ({ ...prev, spreadsheetId: file.id }));
+        setFileFoundStatus('found');
+        setError(null);
+      } else {
+        setConfig(prev => ({ ...prev, spreadsheetId: null }));
+        setFileFoundStatus('not_found');
+      }
+    } catch (e: any) {
+      setFileFoundStatus('idle');
+    }
+  };
 
   const handleSessionExpired = () => {
     setConfig({
@@ -57,11 +85,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       const list = await googleApi.listFolders(config.accessToken);
       setFolders(list);
     } catch (e: any) {
-      if (e.message.includes("SESSION_EXPIRED")) {
-        handleSessionExpired();
-      } else {
-        setError(e.message || "Error al listar carpetas.");
-      }
+      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
+      else setError(e.message || "Error al listar carpetas.");
     } finally {
       setLoadingFolders(false);
     }
@@ -81,43 +106,23 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
             })
             .then(res => res.json())
             .then(user => {
-              setConfig({
-                ...config,
-                isConnected: true,
-                accessToken: response.access_token,
-                email: user.email
-              });
+              setConfig({ ...config, isConnected: true, accessToken: response.access_token, email: user.email });
               setError(null);
-            })
-            .catch(() => setError("Conexión exitosa, pero error al recuperar perfil."));
-          } else if (response.error) {
-            setError(`Error de Google Auth: ${response.error}`);
+            });
           }
         },
       });
       client.requestAccessToken();
-    } catch (e: any) {
-      setError(`Error al iniciar cliente de Google: ${e.message}`);
-    }
+    } catch (e) { setError("Error al iniciar Google Auth."); }
   };
 
   const handleDisconnect = () => {
-    if (config.accessToken) {
-      try {
-        (window as any).google.accounts.oauth2.revoke(config.accessToken, () => {});
-      } catch (e) {}
-    }
     setConfig({
-      isConnected: false,
-      accessToken: null,
-      email: null,
-      audioFolderId: null,
-      audioFolderName: null,
-      sheetFolderId: null,
-      sheetFolderName: null,
-      spreadsheetId: null
+      isConnected: false, accessToken: null, email: null, audioFolderId: null, audioFolderName: null, 
+      sheetFolderId: null, sheetFolderName: null, spreadsheetId: null
     });
     setFolders([]);
+    setFileFoundStatus('idle');
   };
 
   const selectFolder = (type: 'audio' | 'sheet', folderId: string, folderName: string) => {
@@ -129,31 +134,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     setActiveFolderSelector(null);
   };
 
-  const createCarceMindFolder = async () => {
-    if (!config.accessToken) return;
-    setIsSyncing(true);
-    try {
-      const folder = await googleApi.createFolder(config.accessToken, 'CarceMind_Vault');
-      selectFolder('audio', folder.id, 'CarceMind_Vault');
-      selectFolder('sheet', folder.id, 'CarceMind_Vault');
-      loadFolders();
-    } catch (e: any) {
-      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
-      else setError(`Error al crear carpeta: ${e.message}`);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const ensureSpreadsheet = async () => {
     if (!config.accessToken || !config.sheetFolderId) return;
     setIsSyncing(true);
     try {
       const ssId = await googleApi.createSpreadsheet(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
       setConfig(prev => ({ ...prev, spreadsheetId: ssId }));
+      setFileFoundStatus('found');
     } catch (e: any) {
-      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
-      else setError(`Error al crear índice: ${e.message}`);
+      setError(`Error al crear índice: ${e.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -163,159 +152,167 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     <div className="max-w-4xl mx-auto space-y-12 pb-32 animate-in fade-in duration-700">
       <header className="space-y-2">
         <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Configuración</p>
-        <h2 className="text-4xl font-semibold tracking-tight">Arquitectura del Sistema</h2>
+        <h2 className="text-4xl font-semibold tracking-tight">Estructura Cognitiva</h2>
       </header>
 
-      {/* Intelligence Layer Card */}
-      <section className="glass border border-[#1F2330] p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden space-y-8 bg-gradient-to-br from-[#151823] to-[#0B0D12]">
-        <div className="flex flex-col md:flex-row justify-between items-start gap-8">
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#5E7BFF]/10 flex items-center justify-center border border-[#5E7BFF]/20">
-                <Brain className="w-7 h-7 text-[#5E7BFF]" />
+      {/* Secciones de Configuración */}
+      <div className="grid grid-cols-1 gap-8">
+        {/* PASO 1: Google Account */}
+        <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-8">
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-[#5E7BFF]/10 flex items-center justify-center border border-[#5E7BFF]/20">
+                  <Chrome className="w-6 h-6 text-[#5E7BFF]" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-medium">Conexión con Google</h3>
+                  <p className="text-[#646B7B] text-sm italic">Paso obligatorio para habilitar el guardado externo.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-2xl font-medium">Motor Neuronal (Gemini)</h3>
-                <p className="text-[#646B7B] text-sm">El cerebro que procesa y estructura tus pensamientos.</p>
-              </div>
+              {config.isConnected && (
+                <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                  <CheckCircle2 size={16} />
+                  <span className="text-xs font-bold uppercase tracking-widest">{config.email}</span>
+                </div>
+              )}
             </div>
             
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-              <CheckCircle2 className="w-3 h-3" />
-              IA Activada y Lista
-            </div>
-          </div>
-        </div>
-        
-        <p className="text-[10px] text-[#646B7B] leading-relaxed">
-          El motor neuronal Gemini 3 Flash está configurado. 
-          Asegúrate de que la variable <strong>VITE_API_KEY</strong> esté configurada en Vercel para que el navegador pueda acceder a ella.
-          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[#5E7BFF] ml-1 flex inline-flex items-center gap-1 hover:underline">
-            Info de Facturación <ExternalLink className="w-2 h-2" />
-          </a>
-        </p>
-      </section>
-
-      {/* Data Layer Card */}
-      <section className="glass border border-[#1F2330] p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden space-y-10">
-        <div className="flex flex-col md:flex-row justify-between items-start gap-8">
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#10B981]/10 flex items-center justify-center border border-[#10B981]/20">
-                <Database className="w-7 h-7 text-[#10B981]" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-medium">Capa de Datos (Drive/Sheets)</h3>
-                <p className="text-[#646B7B] text-sm">Gestiona dónde se guardan tus audios y memorias estructuradas.</p>
-              </div>
-            </div>
-
-            {config.isConnected && (
-              <div className="flex items-center gap-4 p-5 rounded-2xl bg-[#151823] border border-[#1F2330]">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#10B981] to-[#5E7BFF] flex items-center justify-center font-bold text-white shadow-lg">
-                  {config.email?.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-[#646B7B] font-bold uppercase tracking-widest">Google Account</span>
-                  <span className="text-sm font-medium">{config.email}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 w-full md:w-auto">
             {!config.isConnected ? (
-              <button 
-                onClick={() => handleConnect('consent select_account')}
-                className="w-full md:w-64 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl"
-              >
-                <Chrome className="w-5 h-5" />
-                Conectar Google
+              <button onClick={() => handleConnect()} className="w-full md:w-auto px-10 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl">
+                <Chrome size={20} /> Conectar Cuenta
               </button>
             ) : (
-              <button 
-                onClick={handleDisconnect}
-                className="w-full md:w-64 px-6 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold text-xs uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
-              >
-                <LogOut className="w-4 h-4" />
-                Cerrar Sesión
+              <button onClick={handleDisconnect} className="w-full md:w-auto px-8 py-4 rounded-xl bg-red-500/10 text-red-500 text-[10px] font-bold uppercase tracking-widest border border-red-500/20">
+                <LogOut size={16} className="inline mr-2" /> Desvincular
               </button>
             )}
           </div>
-        </div>
+        </section>
 
+        {/* PASO 2: Directorios */}
         {config.isConnected && (
-          <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-            <div className="h-px bg-[#1F2330]" />
+          <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-10 animate-in slide-in-from-bottom-4">
+            <div className="space-y-2">
+              <h3 className="text-xl font-medium">Asignación de Directorios</h3>
+              <p className="text-[#646B7B] text-sm">Selecciona las carpetas donde CarceMind gestionará tus datos.</p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Carpeta de Audios</label>
-                <div 
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Archivos de Audio (.webm)</label>
+                <button 
                   onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }}
-                  className={`p-6 rounded-3xl border cursor-pointer transition-all ${config.audioFolderId ? 'bg-[#10B981]/5 border-[#10B981]/20' : 'bg-[#151823] border-[#1F2330]'}`}
+                  className={`w-full p-6 rounded-2xl border text-left transition-all flex justify-between items-center ${config.audioFolderId ? 'bg-[#10B981]/5 border-[#10B981]/30 text-white' : 'bg-[#151823] border-[#1F2330] text-[#646B7B]'}`}
                 >
-                  <span className="text-sm font-medium">{config.audioFolderName || 'SELECCIONAR CARPETA'}</span>
-                </div>
+                  <div className="flex items-center gap-3">
+                    <FolderOpen size={18} className={config.audioFolderId ? 'text-[#10B981]' : ''} />
+                    <span className="truncate max-w-[150px]">{config.audioFolderName || 'Seleccionar...'}</span>
+                  </div>
+                  {config.audioFolderId && <CheckCircle2 size={16} className="text-[#10B981]" />}
+                </button>
               </div>
-              <div className="space-y-4">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-[#10B981]">Carpeta de Datos</label>
-                <div 
+
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#10B981]">Base de Datos (Excel)</label>
+                <button 
                   onClick={() => { loadFolders(); setActiveFolderSelector('sheet'); }}
-                  className={`p-6 rounded-3xl border cursor-pointer transition-all ${config.sheetFolderId ? 'bg-[#10B981]/5 border-[#10B981]/20' : 'bg-[#151823] border-[#1F2330]'}`}
+                  className={`w-full p-6 rounded-2xl border text-left transition-all flex justify-between items-center ${config.sheetFolderId ? 'bg-[#10B981]/5 border-[#10B981]/30 text-white' : 'bg-[#151823] border-[#1F2330] text-[#646B7B]'}`}
                 >
-                  <span className="text-sm font-medium">{config.sheetFolderName || 'SELECCIONAR CARPETA'}</span>
-                </div>
+                  <div className="flex items-center gap-3">
+                    <FileSpreadsheet size={18} className={config.sheetFolderId ? 'text-[#10B981]' : ''} />
+                    <span className="truncate max-w-[150px]">{config.sheetFolderName || 'Seleccionar...'}</span>
+                  </div>
+                  {config.sheetFolderId && <CheckCircle2 size={16} className="text-[#10B981]" />}
+                </button>
               </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4">
-              <button 
-                onClick={createCarceMindFolder}
-                className="flex-1 py-5 rounded-2xl bg-[#5E7BFF]/10 text-[#5E7BFF] font-bold text-xs uppercase tracking-widest border border-[#5E7BFF]/20"
-              >
-                Auto-Configurar Carpetas
-              </button>
-              <button 
-                disabled={!config.sheetFolderId || !!config.spreadsheetId}
-                onClick={ensureSpreadsheet} 
-                className="flex-1 py-5 rounded-2xl bg-[#10B981]/10 text-[#10B981] font-bold text-xs uppercase tracking-widest border border-[#10B981]/20 disabled:opacity-30"
-              >
-                {config.spreadsheetId ? 'Base de Datos Lista' : 'Crear Índice Sheets'}
-              </button>
-            </div>
-          </div>
-        )}
+            {/* PASO 3: Validación de Archivo */}
+            {config.sheetFolderId && (
+              <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Search className="text-[#5E7BFF]" size={20} />
+                    <h4 className="font-medium">Validación del Índice de Memoria</h4>
+                  </div>
+                  {fileFoundStatus === 'searching' && <RefreshCw size={18} className="animate-spin text-[#5E7BFF]" />}
+                </div>
 
-        {/* Folder Picker Overlay */}
-        {activeFolderSelector && (
-          <div className="absolute inset-0 bg-[#0B0D12] z-50 p-10 flex flex-col space-y-8">
-            <div className="flex justify-between items-center">
-              <h4 className="text-2xl font-medium">Mis Carpetas Drive</h4>
-              <button onClick={() => setActiveFolderSelector(null)} className="text-[#646B7B] hover:text-white">Cerrar</button>
+                {fileFoundStatus === 'found' && (
+                  <div className="flex items-center gap-4 text-[#10B981] bg-[#10B981]/5 p-4 rounded-xl border border-[#10B981]/20">
+                    <CheckCircle2 size={20} />
+                    <div className="text-xs">
+                      <p className="font-bold">¡ARCHIVO DETECTADO!</p>
+                      <p className="opacity-80">CarceMind_Memory_Index vinculado correctamente.</p>
+                    </div>
+                  </div>
+                )}
+
+                {fileFoundStatus === 'not_found' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 text-amber-500 bg-amber-500/5 p-4 rounded-xl border border-amber-500/20">
+                      <AlertCircle size={20} />
+                      <div className="text-xs">
+                        <p className="font-bold uppercase tracking-widest">No se encuentra el archivo</p>
+                        <p className="opacity-80">El índice no existe en la carpeta seleccionada.</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={ensureSpreadsheet}
+                      disabled={isSyncing}
+                      className="w-full py-5 rounded-2xl bg-[#5E7BFF] text-white font-bold text-xs uppercase tracking-widest shadow-lg shadow-[#5E7BFF33] flex items-center justify-center gap-3 active:scale-95 transition-all"
+                    >
+                      {isSyncing ? <RefreshCw className="animate-spin" /> : <PlusCircle size={18} />}
+                      Crear Archivo de Datos
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {/* Folder Selector Overlay */}
+      {activeFolderSelector && (
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-xl p-6 md:p-20 flex items-center justify-center">
+          <div className="bg-[#0B0D12] border border-[#1F2330] w-full max-w-2xl rounded-[3rem] p-10 flex flex-col h-3/4 shadow-3xl">
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h2 className="text-2xl font-semibold">Directorios de Drive</h2>
+                <p className="text-[#646B7B] text-sm">Escoge una ubicación para {activeFolderSelector === 'audio' ? 'audios' : 'hojas de cálculo'}.</p>
+              </div>
+              <button onClick={() => setActiveFolderSelector(null)} className="p-3 bg-white/5 rounded-full text-[#646B7B] hover:text-white">Cerrar</button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {loadingFolders ? <RefreshCw className="animate-spin mx-auto mt-10" /> : folders.map(f => (
+            
+            <div className="flex-1 overflow-y-auto pr-4 space-y-2">
+              {loadingFolders ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-[#646B7B]">
+                  <RefreshCw className="animate-spin" />
+                  <span className="text-xs font-bold uppercase tracking-tighter">Leyendo Drive...</span>
+                </div>
+              ) : folders.length > 0 ? folders.map(f => (
                 <button 
                   key={f.id} 
                   onClick={() => selectFolder(activeFolderSelector, f.id, f.name)}
-                  className="w-full p-6 bg-[#151823] rounded-3xl border border-[#1F2330] text-left hover:border-[#5E7BFF] transition-all flex items-center gap-4"
+                  className="w-full p-6 bg-[#151823] rounded-2xl border border-[#1F2330] text-left hover:border-[#5E7BFF] transition-all flex items-center gap-4 group"
                 >
-                  <FolderOpen className="w-5 h-5 text-[#646B7B]" />
-                  <span>{f.name}</span>
+                  <FolderOpen className="text-[#646B7B] group-hover:text-[#5E7BFF] transition-colors" />
+                  <span className="font-medium">{f.name}</span>
                 </button>
-              ))}
+              )) : (
+                <div className="text-center py-20 text-[#646B7B]">No se encontraron carpetas.</div>
+              )}
             </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
 
       {error && (
         <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4 animate-in slide-in-from-top-2">
           <AlertCircle className="w-6 h-6 shrink-0" />
-          <div className="space-y-1">
-             <p className="text-sm font-bold uppercase tracking-widest">Error de Configuración</p>
-             <p className="text-sm font-medium">{error}</p>
-          </div>
+          <p className="text-sm font-medium">{error}</p>
         </div>
       )}
     </div>
