@@ -3,7 +3,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>CarceMind | Cognitive Memory Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -41,6 +41,16 @@
       .animate-pulse-soft {
         animation: pulse-soft 2s infinite ease-in-out;
       }
+      .safe-area-bottom {
+        padding-bottom: env(safe-area-inset-bottom, 1.5rem);
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
     </style>
   <script type="importmap">
 {
@@ -53,12 +63,10 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>
     <!-- Entry point for the application -->
     <script type="module" src="index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>

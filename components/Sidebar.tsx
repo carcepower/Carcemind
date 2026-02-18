@@ -26,22 +26,33 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
     { id: ViewType.TASKS, label: 'TAREAS', icon: CheckSquare },
     { id: ViewType.MEMORIES, label: 'CRONOLOGÍA', icon: History },
     { id: ViewType.INSTRUCTIONS, label: 'INSTRUCCIONES', icon: BookOpen },
+    { id: ViewType.SETTINGS, label: 'AJUSTES', icon: Settings },
+  ];
+
+  // Íconos para la barra inferior (limitado a 5 para que quepa bien en móvil)
+  const mobileBottomItems = [
+    { id: ViewType.DASHBOARD, icon: LayoutDashboard },
+    { id: ViewType.RECORD, icon: Mic },
+    { id: ViewType.CHAT, icon: MessageSquare },
+    { id: ViewType.TASKS, icon: CheckSquare },
+    { id: ViewType.SETTINGS, icon: Settings },
   ];
 
   return (
     <>
+      {/* Sidebar Lateral (Desktop y Mobile Overlay) */}
       <aside className={`
         fixed md:static inset-y-0 left-0 w-[280px] bg-[#0B0D12] border-r border-[#1F2330] flex flex-col z-[100] transition-transform duration-500 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        <div className="p-8 flex items-center gap-3">
+        <div className="p-8 flex items-center gap-3 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center shadow-lg shadow-[#5E7BFF33]">
             <BrainCircuit className="w-5 h-5 text-white" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">CarceMind</h1>
         </div>
 
-        <nav className="flex-1 px-4 mt-4 space-y-2">
+        <nav className="flex-1 px-4 mt-4 space-y-2 overflow-y-auto scrollbar-hide">
           {navItems.map((item) => {
             const isActive = activeView === item.id;
             return (
@@ -64,24 +75,25 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
           })}
         </nav>
 
-        <div className="p-6">
-          <button
-            onClick={() => onViewChange(ViewType.SETTINGS)}
-            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-300 ${activeView === ViewType.SETTINGS ? 'bg-[#151823] text-white' : 'text-[#A0A6B1] hover:text-white'}`}
-          >
-            <Settings className="w-5 h-5" />
-            <span className="text-sm font-medium tracking-wide uppercase text-[10px]">AJUSTES</span>
-          </button>
+        <div className="p-6 border-t border-[#1F2330] mt-auto shrink-0 md:block hidden">
+          <div className="flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-[#646B7B] uppercase tracking-widest">
+            Cognición v1.5
+          </div>
         </div>
       </aside>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 glass border-t border-[#1F2330] px-4 py-3 flex justify-around items-center z-[100] safe-area-bottom">
-        {navItems.slice(0, 4).map((item) => {
+      {/* Barra Inferior Móvil (Acceso rápido) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 glass border-t border-[#1F2330] px-2 py-3 pb-8 flex justify-around items-center z-[100] safe-area-bottom">
+        {mobileBottomItems.map((item) => {
           const isActive = activeView === item.id;
           return (
-            <button key={item.id} onClick={() => onViewChange(item.id)} className="flex flex-col items-center gap-1 min-w-[64px]">
-              <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-[#5E7BFF] text-white shadow-lg' : 'text-[#646B7B]'}`}>
-                <item.icon className="w-6 h-6" />
+            <button 
+              key={item.id} 
+              onClick={() => onViewChange(item.id)} 
+              className="flex flex-col items-center gap-1 flex-1"
+            >
+              <div className={`p-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#5E7BFF] text-white shadow-lg shadow-[#5E7BFF44] scale-110' : 'text-[#646B7B] hover:text-[#A0A6B1]'}`}>
+                <item.icon className="w-5 h-5" />
               </div>
             </button>
           );
