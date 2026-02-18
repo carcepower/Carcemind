@@ -69,7 +69,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const apiKey = getApiKey();
       
       if (!apiKey) {
-        throw new Error("VITE_API_KEY no encontrada en el entorno de producción.");
+        throw new Error("VITE_API_KEY no encontrada.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -79,22 +79,66 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         reader.readAsDataURL(blob);
       });
 
+      const prompt = `
+        Analiza este audio y genera un JSON con la siguiente estructura:
+        {
+          "title": "título corto",
+          "summary": "resumen ejecutivo",
+          "emotionalState": "estado de ánimo detectado",
+          "tags": ["tag1", "tag2"],
+          "snippets": ["frase clave 1", "frase clave 2"],
+          "tasks": [
+            {"title": "descripción de la tarea", "priority": "low|medium|high", "daysToDeadline": 1}
+          ]
+        }
+        Si no hay tareas, el array "tasks" debe estar vacío.
+      `;
+
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Resume este audio. JSON: title, summary, emotionalState, tags, snippets" }] }],
+        contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: prompt }] }],
         config: { responseMimeType: 'application/json' }
       });
 
       const data = JSON.parse(result.text);
       setStatus('structuring');
       const entryId = crypto.randomUUID();
+      
+      // Guardar Memoria
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
-        entryId, new Date().toISOString(), data.title, data.summary, data.emotionalState, data.tags?.join(', '), driveFile.id, driveFile.webViewLink, data.snippets?.join(' | ')
+        entryId, 
+        new Date().toISOString(), 
+        data.title, 
+        data.summary, 
+        data.emotionalState, 
+        data.tags?.join(', '), 
+        driveFile.id, 
+        driveFile.webViewLink, 
+        data.snippets?.join(' | ')
       ], googleConfig.accessToken!);
+
+      // Guardar Tareas detectadas (si existen)
+      if (data.tasks && data.tasks.length > 0) {
+        for (const task of data.tasks) {
+          const deadlineDate = new Date();
+          deadlineDate.setDate(deadlineDate.getDate() + (task.daysToDeadline || 1));
+          
+          await googleApi.appendRow(googleConfig.spreadsheetId!, 'TAREAS', [
+            crypto.randomUUID(),
+            new Date().toISOString(),
+            task.title,
+            task.priority || 'medium',
+            'pending',
+            entryId,
+            deadlineDate.toISOString()
+          ], googleConfig.accessToken!);
+        }
+      }
 
       setStatus('finished');
       onMemoryAdded({ id: entryId, title: data.title, excerpt: data.summary, timestamp: new Date(), type: 'voice' });
     } catch (err: any) {
+      console.error(err);
       setStatus('error');
       setErrorMessage(err.message || 'Error en el procesamiento neuronal.');
     }
@@ -104,7 +148,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Tu voz se procesa en la nube mediante Gemini 3 Flash.</p>
+        <p className="text-[#A0A6B1]">Tu voz se procesa y se extraen tareas automáticamente.</p>
       </div>
 
       <button
@@ -118,7 +162,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Error' : status + '...'}
+            {status === 'finished' ? '¡Memoria y Tareas Guardadas!' : status === 'error' ? 'Error' : status + '...'}
           </p>
           {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
         </div>

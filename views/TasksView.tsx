@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Task, GoogleConfig } from '../types';
-import { Plus, Check, Clock, AlertCircle, RefreshCw, Table } from 'lucide-react';
+import { Plus, Check, Clock, AlertCircle, RefreshCw, Table, ExternalLink } from 'lucide-react';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -13,7 +13,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig }) 
   const [isSyncing, setIsSyncing] = useState(false);
 
   const toggleTask = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed, status: t.completed ? 'pending' : 'completed' } : t));
     if (googleConfig.isConnected) {
       triggerSync();
     }
@@ -24,6 +24,12 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig }) 
     setTimeout(() => setIsSyncing(false), 1200);
   };
 
+  const openSpreadsheet = () => {
+    if (googleConfig.spreadsheetId) {
+      window.open(`https://docs.google.com/spreadsheets/d/${googleConfig.spreadsheetId}/edit`, '_blank');
+    }
+  };
+
   const priorityColors = {
     high: '#EF4444',
     medium: '#F59E0B',
@@ -32,7 +38,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig }) 
 
   return (
     <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in slide-in-from-left-4 duration-500">
-      <header className="flex justify-between items-end">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div className="space-y-2">
           <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-medium">Cognición Activa</p>
           <div className="flex items-center gap-4">
@@ -51,7 +57,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig }) 
       </header>
 
       <div className="space-y-4">
-        {tasks.map((task) => (
+        {tasks.length > 0 ? tasks.map((task) => (
           <div 
             key={task.id} 
             className={`group flex items-center gap-6 p-6 rounded-3xl transition-all border border-[#1F2330] ${
@@ -76,25 +82,34 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig }) 
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5 text-[#646B7B] text-xs">
                   <Clock className="w-3 h-3" />
-                  <span>{task.deadline.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>
+                  <span>{new Date(task.deadline).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-tighter" style={{ color: priorityColors[task.priority] }}>
+                <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-tighter" style={{ color: priorityColors[task.priority as keyof typeof priorityColors] || '#A0A6B1' }}>
                   <AlertCircle className="w-3 h-3" />
                   <span>{task.priority}</span>
                 </div>
               </div>
             </div>
           </div>
-        ))}
+        )) : (
+          <div className="py-20 text-center border border-dashed border-[#1F2330] rounded-[2.5rem]">
+            <p className="text-[#646B7B] italic">No hay tareas pendientes en tu cerebro.</p>
+          </div>
+        )}
       </div>
       
       {googleConfig.isConnected && (
-        <div className="p-6 rounded-3xl border border-dashed border-[#1F2330] flex items-center justify-between text-[#646B7B]">
+        <div className="p-6 rounded-3xl border border-dashed border-[#1F2330] flex flex-col md:flex-row items-center justify-between text-[#646B7B] gap-4">
           <div className="flex items-center gap-3">
-            <Table className="w-5 h-5" />
-            <span className="text-xs">Sincronizado con: <span className="text-white">CarceMind_Tareas.xlsx</span></span>
+            <Table className="w-5 h-5 text-[#10B981]" />
+            <span className="text-xs">Índice activo: <span className="text-white font-medium">CarceMind_Memory_Index</span></span>
           </div>
-          <button className="text-[10px] font-bold uppercase tracking-widest hover:text-white transition-colors">Abrir en Drive</button>
+          <button 
+            onClick={openSpreadsheet}
+            className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest hover:text-[#5E7BFF] transition-colors"
+          >
+            Abrir en Google Sheets <ExternalLink className="w-3 h-3" />
+          </button>
         </div>
       )}
     </div>
