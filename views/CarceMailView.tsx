@@ -13,7 +13,8 @@ import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  Info
+  Info,
+  ChevronRight
 } from 'lucide-react';
 
 interface CarceMailViewProps {
@@ -29,8 +30,6 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
   const [results, setResults] = useState<any[]>([]);
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const getApiKey = () => (process.env as any).API_KEY;
 
   const handleConnectGmail = () => {
     setError(null);
@@ -67,13 +66,13 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
     setResults([]);
 
     try {
-      const apiKey = getApiKey();
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
       const extractionPrompt = `
-        Convierte esta petición de usuario en una consulta técnica válida para la API de Gmail (operadores: from, subject, has:attachment, etc.).
+        Hoy es ${new Date().toLocaleDateString()}.
+        Convierte esta petición de usuario en una consulta técnica para la API de Gmail (usa operadores como from:, subject:, after:, before:).
         Petición: "${prompt}"
-        Responde ÚNICAMENTE con la cadena de búsqueda. Ejemplo: "subject:factura Talent Academy"
+        Responde SOLO con la cadena de búsqueda. No añadidas explicaciones ni comillas.
       `;
 
       const extractionResult = await ai.models.generateContent({
@@ -81,11 +80,11 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
         contents: extractionPrompt
       });
 
-      const gmailQuery = extractionResult.text.trim().replace(/"/g, '');
+      const gmailQuery = extractionResult.text.trim();
       const messages = await googleApi.searchGmail(config.accessToken!, gmailQuery, 5);
       
       if (!messages || messages.length === 0) {
-        setAiAnswer("No he encontrado nada en esta cuenta de Gmail con esa consulta específica.");
+        setAiAnswer(`No he encontrado correos que coincidan con la búsqueda: "${gmailQuery}"`);
         setIsSearching(false);
         return;
       }
@@ -101,9 +100,10 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
       }).join('\n---\n');
 
       const answerPrompt = `
-        Basándote en estos correos:
+        Basándote en estos correos extraídos de la cuenta de ${config.email}:
         ${snippets}
-        Responde a: "${prompt}". Sé conciso.
+        Responde a la duda del usuario: "${prompt}".
+        Si la información no está en los correos, indícalo claramente.
       `;
 
       const finalResult = await ai.models.generateContent({
@@ -115,7 +115,8 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
       setResults(detailedMessages);
 
     } catch (err: any) {
-      setError("Error de búsqueda. Es posible que el token haya expirado.");
+      console.error(err);
+      setError(err.message || "Error inesperado en la búsqueda.");
     } finally {
       setIsSearching(false);
     }
@@ -130,7 +131,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
         
         <div className="text-center space-y-4 max-w-md">
           <h2 className="text-4xl font-semibold tracking-tight">CarceMail</h2>
-          <p className="text-[#A0A6B1] text-sm leading-relaxed px-4">Busca información en tus correos sin salir de la app. Requiere autorización previa del email en tu Google Cloud Console.</p>
+          <p className="text-[#A0A6B1] text-sm leading-relaxed px-4">Inteligencia artificial aplicada a tu bandeja de entrada.</p>
         </div>
         
         <div className="flex flex-col items-center gap-6 w-full max-w-sm">
@@ -138,25 +139,18 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
             onClick={handleConnectGmail}
             className="w-full py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-2xl group"
           >
-            <Mail size={18} /> Conectar Cuenta de Correo
+            <Mail size={18} /> Conectar Gmail
           </button>
 
           <div className="w-full p-6 rounded-3xl bg-amber-500/5 border border-amber-500/10 space-y-4">
              <div className="flex items-start gap-3 text-amber-500">
                <Info size={16} className="shrink-0 mt-0.5" />
-               <p className="text-[11px] leading-relaxed font-medium uppercase tracking-tight">Aviso importante para el Error 403</p>
+               <p className="text-[11px] font-bold uppercase tracking-tight">Verificación de API</p>
              </div>
              <p className="text-[10px] text-[#646B7B] leading-relaxed">
-               Si recibes un error de "Acceso Bloqueado", asegúrate de que el email esté en <b>Test Users</b> y usa el botón <b>Configuración Avanzada</b> si aparece.
+               Asegúrate de haber activado la <b>"Gmail API"</b> en la biblioteca de servicios de tu proyecto de Google Cloud.
              </p>
-             <a href="https://console.cloud.google.com/" target="_blank" className="flex items-center gap-2 text-[10px] font-bold text-amber-500 hover:underline">
-               Abrir Google Console <ExternalLink size={10} />
-             </a>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3 px-6 py-2 rounded-full bg-white/5 border border-white/5 text-[10px] font-bold text-[#646B7B] uppercase tracking-[0.2em]">
-          <ShieldCheck size={14} className="text-[#10B981]" /> Seguridad de Solo Lectura
         </div>
       </div>
     );
@@ -191,7 +185,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Ej: ¿Qué facturas tengo de Talent Academy?"
+            placeholder="Ej: ¿Qué correos tengo de hoy de Booking?"
             className="flex-1 bg-transparent outline-none text-lg placeholder:text-[#646B7B]"
           />
           <button 
@@ -206,19 +200,19 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
 
       {aiAnswer && (
         <div className="animate-in slide-in-from-top-4 duration-500">
-          <div className="p-10 rounded-[2.5rem] bg-gradient-to-br from-[#151823] to-[#0B0D12] border border-[#1F2330] space-y-6">
+          <div className="p-10 rounded-[2.5rem] bg-gradient-to-br from-[#151823] to-[#0B0D12] border border-[#1F2330] space-y-6 shadow-2xl shadow-black/40">
             <div className="flex items-center gap-3 text-[#5E7BFF]">
               <Sparkles size={20} className="animate-pulse-soft" />
-              <h4 className="font-bold text-xs uppercase tracking-widest">Resumen de CarceMail</h4>
+              <h4 className="font-bold text-xs uppercase tracking-widest">Respuesta Estructurada</h4>
             </div>
-            <p className="text-xl leading-relaxed text-[#F5F7FA]">{aiAnswer}</p>
+            <p className="text-xl leading-relaxed text-[#F5F7FA] whitespace-pre-wrap">{aiAnswer}</p>
           </div>
         </div>
       )}
 
       <div className="space-y-4">
         {results.length > 0 && (
-          <h5 className="text-[10px] font-bold uppercase tracking-widest text-[#646B7B] px-4">Correos Consultados</h5>
+          <h5 className="text-[10px] font-bold uppercase tracking-widest text-[#646B7B] px-4">Fuentes Consultadas</h5>
         )}
         {results.map((msg, idx) => {
           const from = msg.payload.headers.find((h: any) => h.name === 'From')?.value || '';
@@ -239,7 +233,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
                 onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')}
                 className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-[#646B7B] hover:text-white transition-colors"
               >
-                Ver completo en Gmail <ExternalLink size={10} />
+                Abrir en Gmail <ExternalLink size={10} />
               </button>
             </div>
           );
@@ -247,9 +241,18 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
       </div>
 
       {error && (
-        <div className="p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-4">
-          <AlertCircle className="shrink-0" />
-          <p className="text-xs font-bold uppercase tracking-widest">{error}</p>
+        <div className="p-8 rounded-[2.5rem] bg-red-500/5 border border-red-500/20 text-red-400 space-y-4 animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-4">
+             <AlertCircle className="shrink-0" size={24} />
+             <h4 className="font-bold uppercase tracking-widest">Error de Sincronización</h4>
+          </div>
+          <p className="text-sm leading-relaxed opacity-80">{error}</p>
+          {error.includes("403") && (
+            <div className="p-4 rounded-xl bg-black/20 text-[11px] text-[#A0A6B1] space-y-2 border border-white/5">
+              <p className="font-bold text-white flex items-center gap-2"><Info size={12} /> Solución Sugerida:</p>
+              <p>Entra en <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" className="text-[#5E7BFF] hover:underline">este enlace</a> y pulsa el botón azul <b>HABILITAR</b>.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
