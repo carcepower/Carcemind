@@ -1,11 +1,17 @@
 
 import React, { useState } from 'react';
-import { GmailConfig } from '../types';
+import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI } from '@google/genai';
 import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
 
-interface CarceMailViewProps { config: GmailConfig; setConfig: React.Dispatch<React.SetStateAction<GmailConfig>>; }
+interface CarceMailViewProps { 
+  config: GmailConfig; 
+  setConfig: React.Dispatch<React.SetStateAction<GmailConfig>>;
+  history: { prompt: string, answer: string, results: any[] }[];
+  setHistory: React.Dispatch<React.SetStateAction<{ prompt: string, answer: string, results: any[] }[]>>;
+  googleConfig: GoogleConfig;
+}
 
 const CLIENT_ID = "660418616677-8rbbg21t1ksej5vuso1ou9r7sue8ma3a.apps.googleusercontent.com"; 
 
@@ -32,11 +38,9 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
+const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, history, setHistory, googleConfig }) => {
   const [prompt, setPrompt] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleConnectGmail = () => {
@@ -56,18 +60,34 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
 
   const handleSearch = async () => {
     if (!prompt.trim() || isSearching) return;
-    setIsSearching(true); setError(null); setAiAnswer(null); setResults([]);
+    setIsSearching(true); setError(null);
     try {
       const apiKey = googleApi.getApiKey();
       if (!apiKey) throw new Error("VITE_API_KEY no detectada.");
       const ai = new GoogleGenAI({ apiKey });
       const extraction = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Extract search query from: "${prompt}". Just the query.` });
       const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
-      if (messages.length === 0) { setAiAnswer("No se encontraron correos relevantes."); return; }
+      
+      if (messages.length === 0) {
+        const noResults = { prompt, answer: "No se encontraron correos relevantes.", results: [] };
+        setHistory(prev => [noResults, ...prev]);
+        setIsSearching(false);
+        return;
+      }
+
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
       const snippets = detailed.map(m => `Subj: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Body: ${m.snippet}`).join('\n');
       const answer = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Answer based on these emails:\n${snippets}\nUser asks: "${prompt}". BE FRIENDLY, USE PARAGRAPHS, REMOVE ASTERISKS.` });
-      setAiAnswer(answer.text); setResults(detailed);
+      
+      const newInteraction = { prompt, answer: answer.text, results: detailed };
+      setHistory(prev => [newInteraction, ...prev]);
+      setPrompt('');
+
+      // Sincronizar con el Spreadsheet Log
+      if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), prompt, answer.text, JSON.stringify(detailed.slice(0, 3))], googleConfig.accessToken);
+      }
+
     } catch (err: any) { setError(err.message || "Error IA."); } finally { setIsSearching(false); }
   };
 
@@ -87,25 +107,39 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
         </div>
         <button onClick={() => setConfig({ isConnected: false, email: null, accessToken: null })} className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:text-red-400"><LogOut size={14} /> Desconectar</button>
       </header>
+
       <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-8 flex items-center gap-6 shadow-2xl">
         <Search className="text-[#646B7B]" />
         <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Pregúntame sobre tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
         <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">{isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}</button>
       </div>
-      {aiAnswer && (
-        <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10"><Sparkles size={100} className="text-[#5E7BFF]" /></div>
-          <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Resumen Inteligente</h4></div>
-          <FormattedResponse text={aiAnswer} />
-        </div>
-      )}
+
       {error && <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex items-center gap-4"><AlertCircle size={20} /> <p className="text-sm">{error}</p></div>}
-      <div className="space-y-4">
-        {results.map((msg, idx) => (
-          <div key={idx} className="glass border border-[#1F2330] p-8 rounded-[2rem] space-y-4 hover:border-[#5E7BFF]/30 transition-all group">
-            <h6 className="font-semibold text-lg">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
-            <p className="text-sm text-[#A0A6B1] italic leading-relaxed">"{msg.snippet}"</p>
-            <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[10px] font-bold text-[#646B7B] uppercase tracking-widest flex items-center gap-2 group-hover:text-white transition-colors">Abrir en Gmail <ExternalLink size={12} /></button>
+
+      <div className="space-y-16">
+        {history.map((interaction, i) => (
+          <div key={i} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="flex justify-end">
+              <div className="bg-[#151823] border border-[#1F2330] p-6 rounded-[2rem] max-w-[80%] text-right italic text-[#A0A6B1]">"{interaction.prompt}"</div>
+            </div>
+            
+            <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8 opacity-10"><Sparkles size={100} className="text-[#5E7BFF]" /></div>
+              <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Resumen de CarceMail</h4></div>
+              <FormattedResponse text={interaction.answer} />
+              
+              {interaction.results.length > 0 && (
+                <div className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {interaction.results.slice(0, 2).map((msg, idx) => (
+                    <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2">
+                      <h6 className="font-semibold text-sm truncate">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
+                      <p className="text-[10px] text-[#646B7B] line-clamp-2 leading-relaxed">{msg.snippet}</p>
+                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1">Ver Correo <ExternalLink size={10} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>

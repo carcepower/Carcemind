@@ -22,28 +22,22 @@ const App: React.FC = () => {
   const [googleConfig, setGoogleConfig] = useState<GoogleConfig>(() => {
     const saved = localStorage.getItem('carcemind_google_config');
     return saved ? JSON.parse(saved) : {
-      isConnected: false,
-      email: null,
-      accessToken: null,
-      audioFolderId: null,
-      audioFolderName: null,
-      sheetFolderId: null,
-      sheetFolderName: null,
-      spreadsheetId: null
+      isConnected: false, email: null, accessToken: null, audioFolderId: null, audioFolderName: null, sheetFolderId: null, sheetFolderName: null, spreadsheetId: null
     };
   });
 
   const [gmailConfig, setGmailConfig] = useState<GmailConfig>(() => {
     const saved = localStorage.getItem('carcemind_gmail_config');
-    return saved ? JSON.parse(saved) : {
-      isConnected: false,
-      email: null,
-      accessToken: null
-    };
+    return saved ? JSON.parse(saved) : { isConnected: false, email: null, accessToken: null };
   });
 
+  // ESTADOS ELEVADOS PARA PERSISTENCIA DE SESIÓN
   const [memories, setMemories] = useState<Memory[]>([]); 
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [chatHistory, setChatHistory] = useState<Message[]>([
+    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
+  ]);
+  const [mailHistory, setMailHistory] = useState<{ prompt: string, answer: string, results: any[] }[]>([]);
 
   useEffect(() => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
@@ -53,78 +47,61 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_gmail_config', JSON.stringify(gmailConfig));
   }, [gmailConfig]);
 
-  const normalizeStatus = (status: string): TaskStatus => {
-    const s = (status || '').toLowerCase();
-    if (s === 'pending' || s === 'pendiente') return 'pendiente';
-    if (s === 'in progress' || s === 'en marcha') return 'en marcha';
-    if (s === 'completed' || s === 'terminada') return 'terminada';
-    if (s === 'cancelled' || s === 'anulada') return 'anulada';
-    return 'pendiente';
-  };
-
   const loadData = async () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       try {
-        const [memRows, taskRows] = await Promise.all([
+        const [memRows, taskRows, chatRows, mailRows] = await Promise.all([
           googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken)
+          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken),
+          googleApi.getRows(googleConfig.spreadsheetId, 'CHAT_LOG', googleConfig.accessToken),
+          googleApi.getRows(googleConfig.spreadsheetId, 'MAIL_LOG', googleConfig.accessToken)
         ]);
 
-        const loadedMemories: Memory[] = memRows
-          .slice(1)
-          .filter((row: any) => row[0])
-          .map((row: any) => ({
-            id: row[0],
-            timestamp: new Date(row[1]),
-            title: row[2],
-            excerpt: row[3],
-            emotionalTag: row[4],
-            tags: row[5] ? row[5].split(', ') : [],
-            driveFileId: row[6],
-            driveViewLink: row[7],
-            snippets: row[8] ? row[8].split(' | ') : [],
-            content: row[9] || "",
-            type: 'voice'
-          })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        // Cargar Memorias
+        const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+          id: r[0], timestamp: new Date(r[1]), title: r[2], excerpt: r[3], emotionalTag: r[4], tags: r[5] ? r[5].split(', ') : [], driveFileId: r[6], driveViewLink: r[7], snippets: r[8] ? r[8].split(' | ') : [], content: r[9] || "", type: 'voice'
+        })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
-        const loadedTasks: Task[] = taskRows
-          .slice(1)
-          .filter((row: any) => row[0])
-          .map((row: any) => ({
-            id: row[0],
-            date: row[1],
-            title: row[2] || "Tarea sin título",
-            priority: (row[3] || 'medium').toLowerCase() as any,
-            status: normalizeStatus(row[4]),
-            completed: normalizeStatus(row[4]) === 'terminada',
-            originId: row[5],
-            deadline: row[6] ? new Date(row[6]) : new Date(),
-            completedAt: row[7] ? new Date(row[7]) : null
+        // Cargar Tareas
+        const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+          id: r[0], date: r[1], title: r[2] || "Tarea sin título", priority: (r[3] || 'medium').toLowerCase() as any, status: (r[4] || 'pendiente') as any, completed: r[4] === 'terminada', originId: r[5], deadline: r[6] ? new Date(r[6]) : new Date(), completedAt: r[7] ? new Date(r[7]) : null
+        }));
+
+        // Cargar Historial de Chat
+        if (chatRows.length > 1) {
+          const loadedChat = chatRows.slice(1).map((r: any) => ({
+            id: r[0], timestamp: new Date(r[1]), role: r[2] as 'user' | 'assistant', text: r[3]
           }));
+          setChatHistory(loadedChat);
+        }
+
+        // Cargar Historial de Mail
+        if (mailRows.length > 1) {
+          const loadedMail = mailRows.slice(1).map((r: any) => ({
+            prompt: r[2], answer: r[3], results: JSON.parse(r[4] || '[]')
+          }));
+          setMailHistory(loadedMail);
+        }
 
         setMemories(loadedMemories);
         setTasks(loadedTasks);
       } catch (error) {
-        console.error("Error cargando datos:", error);
+        console.error("Error cargando datos del Cloud:", error);
       } finally {
         setIsInitialLoading(false);
       }
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [googleConfig.isConnected, googleConfig.spreadsheetId, googleConfig.accessToken]);
+  useEffect(() => { loadData(); }, [googleConfig.isConnected, googleConfig.spreadsheetId, googleConfig.accessToken]);
 
   const handleDeleteMemory = async (id: string) => {
     if (!googleConfig.accessToken || !googleConfig.spreadsheetId) return;
     try {
       await googleApi.deleteRowById(googleConfig.spreadsheetId, 'ENTRADAS', id, googleConfig.accessToken);
       setMemories(prev => prev.filter(m => m.id !== id));
-    } catch (e) {
-      console.error("Error al borrar memoria del Excel:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const handleDeleteTask = async (id: string) => {
@@ -132,17 +109,15 @@ const App: React.FC = () => {
     try {
       await googleApi.deleteRowById(googleConfig.spreadsheetId, 'TAREAS', id, googleConfig.accessToken);
       setTasks(prev => prev.filter(t => t.id !== id));
-    } catch (e) {
-      console.error("Error al borrar tarea del Excel:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const renderView = () => {
     switch (activeView) {
       case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
-      case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} />;
-      case ViewType.MAIL: return <CarceMailView config={gmailConfig} setConfig={setGmailConfig} />;
+      case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} messages={chatHistory} setMessages={setChatHistory} />;
+      case ViewType.MAIL: return <CarceMailView config={gmailConfig} setConfig={setGmailConfig} history={mailHistory} setHistory={setMailHistory} googleConfig={googleConfig} />;
       case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} onRefresh={loadData} isLoading={isInitialLoading} />;
       case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
       case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
@@ -155,13 +130,9 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row h-screen bg-[#0B0D12] text-[#F5F7FA] overflow-hidden">
       <div className="md:hidden flex items-center justify-between p-6 glass border-b border-[#1F2330] z-[60] safe-area-top">
         <h1 className="text-xl font-bold tracking-tighter bg-gradient-to-r from-[#5E7BFF] to-[#8A6CFF] bg-clip-text text-transparent">CarceMind</h1>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-[#A0A6B1]">
-          {isMobileMenuOpen ? <X /> : <Menu />}
-        </button>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-[#A0A6B1]">{isMobileMenuOpen ? <X /> : <Menu />}</button>
       </div>
-
       <Sidebar activeView={activeView} onViewChange={(v) => { setActiveView(v); setIsMobileMenuOpen(false); }} isMobileMenuOpen={isMobileMenuOpen} />
-
       <main className="flex-1 overflow-y-auto relative p-6 md:p-12 pb-32 md:pb-12">
         <div className="max-w-7xl mx-auto">
           {isInitialLoading && (

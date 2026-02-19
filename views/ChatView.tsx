@@ -3,11 +3,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI } from '@google/genai';
-import { Send, Sparkles, User, BrainCircuit, Loader2, ChevronRight, Check } from 'lucide-react';
+import { Send, Sparkles, User, BrainCircuit, Loader2 } from 'lucide-react';
 
 interface ChatViewProps {
   memories: Memory[];
   googleConfig: GoogleConfig;
+  messages: Message[];
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
 }
 
 const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
@@ -17,8 +19,6 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
       {lines.map((line, i) => {
         let content = line.trim();
         if (!content) return null;
-
-        // Formato de Lista (puntos o números)
         const isListItem = content.startsWith('*') || content.startsWith('-') || /^\d+\./.test(content);
         if (isListItem) {
           content = content.replace(/^[*-\d.]+\s*/, '');
@@ -29,23 +29,15 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
             </div>
           );
         }
-
-        return (
-          <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: formatBold(content) }} />
-        );
+        return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: formatBold(content) }} />;
       })}
     </div>
   );
 };
 
-const formatBold = (text: string) => {
-  return text.replace(/\*\*(.*?)\*\*/g, '<b class="text-white font-semibold">$1</b>');
-};
+const formatBold = (text: string) => text.replace(/\*\*(.*?)\*\*/g, '<b class="text-white font-semibold">$1</b>');
 
-const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
-  ]);
+const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, setMessages }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,31 +46,44 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [messages, isTyping]);
 
+  const saveToCloud = async (msg: Message) => {
+    if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
+      try {
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'CHAT_LOG', [msg.id, msg.timestamp.toISOString(), msg.role, msg.text], googleConfig.accessToken);
+      } catch (e) { console.error("Cloud Chat Log Error:", e); }
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
+    
+    // Guardar mensaje del usuario
+    saveToCloud(userMsg);
 
     try {
       const apiKey = googleApi.getApiKey();
       if (!apiKey) throw new Error("API_KEY_MISSING");
       const ai = new GoogleGenAI({ apiKey });
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
-      const systemInstruction = `
-        Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo a navegar por sus recuerdos de forma profesional, cálida y concisa.
-        USA UN TONO AMIGABLE. ESTRUCTURA CON PÁRRAFOS.
-        Contexto: ${memoryContext}
-      `;
+      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. Contexto: ${memoryContext}`;
+      
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: input,
         config: { systemInstruction, temperature: 0.7 }
       });
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() }]);
+
+      const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
+      setMessages(prev => [...prev, aiMsg]);
+      
+      // Guardar respuesta de la IA
+      saveToCloud(aiMsg);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: "Error técnico detectado en la red neuronal.", timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: "Error técnico en la red neuronal.", timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
@@ -92,7 +97,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         </div>
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-          <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Índice Mental de {memories.length} bloques</p>
+          <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Historial Persistente Activo</p>
         </div>
       </header>
 
@@ -109,9 +114,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         ))}
         {isTyping && (
           <div className="flex gap-5 animate-pulse">
-            <div className="w-10 h-10 rounded-xl bg-[#5E7BFF] flex items-center justify-center shrink-0">
-              <Sparkles size={18} className="animate-spin" />
-            </div>
+            <div className="w-10 h-10 rounded-xl bg-[#5E7BFF] flex items-center justify-center shrink-0"><Sparkles size={18} className="animate-spin" /></div>
             <div className="p-6 rounded-[2rem] bg-white/5 flex gap-2 items-center">
               <div className="w-1.5 h-1.5 rounded-full bg-[#5E7BFF] animate-bounce" style={{ animationDelay: '0s' }} />
               <div className="w-1.5 h-1.5 rounded-full bg-[#5E7BFF] animate-bounce" style={{ animationDelay: '0.2s' }} />

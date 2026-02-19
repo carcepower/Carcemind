@@ -11,29 +11,26 @@ export const googleApi = {
   },
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
-    if (!token) throw new Error("TOKEN_MISSING: No hay un token de acceso válido.");
+    if (!token) throw new Error("TOKEN_MISSING");
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     let response = await fetch(url, { ...options, headers });
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      throw new Error(`Error ${response.status}: ${errData.error?.message || "Error desconocido"}`);
+      throw new Error(`Error ${response.status}`);
     }
     return response;
   },
 
   async listFolders(token: string) {
-    const query = encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false");
-    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`, token);
+    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false")}&fields=files(id, name)`, token);
     const data = await response.json();
     return data.files || [];
   },
 
   async findFileInFolder(token: string, fileName: string, folderId: string) {
-    const query = encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`);
-    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`, token);
+    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`)}&fields=files(id, name)`, token);
     const data = await response.json();
     return data.files?.[0] || null;
   },
@@ -52,9 +49,26 @@ export const googleApi = {
     const ss = await response.json();
     const spreadsheetId = ss.spreadsheetId;
     await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root`, token, { method: 'PATCH' });
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'ENTRADAS' } } }, { addSheet: { properties: { title: 'TAREAS' } } }, { deleteSheet: { sheetId: 0 } }] }) });
-    await this.appendRow(spreadsheetId, 'ENTRADAS', ['ID_ENTRADA', 'FECHA_CREACION', 'TITULO', 'RESUMEN', 'ESTADO_EMOCIONAL', 'TAGS', 'DRIVE_FILE_ID', 'DRIVE_WEBVIEW_LINK', 'SNIPPETS', 'TRANSCRIPCION_COMPLETA'], token);
-    await this.appendRow(spreadsheetId, 'TAREAS', ['ID_TAREA', 'FECHA_CREACION', 'DESCRIPCION', 'PRIORIDAD', 'ESTADO', 'ID_ENTRADA_ORIGEN', 'FECHA_LIMITE', 'FECHA_COMPLETADA'], token);
+    
+    // Crear todas las pestañas necesarias: ENTRADAS, TAREAS, CHAT_LOG, MAIL_LOG
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        requests: [
+          { addSheet: { properties: { title: 'ENTRADAS' } } }, 
+          { addSheet: { properties: { title: 'TAREAS' } } }, 
+          { addSheet: { properties: { title: 'CHAT_LOG' } } },
+          { addSheet: { properties: { title: 'MAIL_LOG' } } },
+          { deleteSheet: { sheetId: 0 } }
+        ] 
+      }) 
+    });
+
+    await this.appendRow(spreadsheetId, 'ENTRADAS', ['ID', 'FECHA', 'TITULO', 'RESUMEN', 'EMOCION', 'TAGS', 'DRIVE_ID', 'DRIVE_LINK', 'SNIPPETS', 'TEXTO'], token);
+    await this.appendRow(spreadsheetId, 'TAREAS', ['ID', 'FECHA', 'TITULO', 'PRIORIDAD', 'ESTADO', 'ORIGEN', 'DEADLINE', 'COMPLETED'], token);
+    await this.appendRow(spreadsheetId, 'CHAT_LOG', ['ID', 'FECHA', 'ROLE', 'TEXTO'], token);
+    await this.appendRow(spreadsheetId, 'MAIL_LOG', ['ID', 'FECHA', 'PROMPT', 'AI_ANSWER', 'RESULTS_JSON'], token);
+    
     return spreadsheetId;
   },
 
