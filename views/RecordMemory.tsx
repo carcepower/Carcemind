@@ -60,8 +60,11 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      // Correct initialization using the environment key
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Soporte para prefijo VITE_ exigido por Vite en Vercel
+      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      if (!apiKey) throw new Error("Falta la Clave API de Gemini.");
+
+      const ai = new GoogleGenAI({ apiKey });
       
       const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
@@ -137,7 +140,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     } catch (err: any) {
       console.error(err);
       setStatus('error');
-      setErrorMessage(err.message || 'Error en el procesamiento neuronal.');
+      const msg = err.message || "Error desconocido";
+      setErrorMessage(msg.includes("403") ? "Error 403: Activa 'Generative Language API' en Google Cloud." : msg);
     }
   };
 
@@ -159,9 +163,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria y Transcripción Guardadas!' : status === 'error' ? 'Error' : status + '...'}
+            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Error Detectado' : status + '...'}
           </p>
-          {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
+          {status === 'error' && <p className="text-red-400 mt-2 text-xs leading-relaxed">{errorMessage}</p>}
         </div>
       )}
     </div>

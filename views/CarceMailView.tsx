@@ -63,7 +63,13 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
     setResults([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Soporte para prefijo VITE_ exigido por Vite en Vercel
+      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      if (!apiKey || apiKey === 'undefined') {
+        throw new Error("No se detecta la variable VITE_API_KEY. Configúrala en el panel de Vercel.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
 
       const extractionResult = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -95,7 +101,11 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
 
     } catch (err: any) {
       console.error(err);
-      setError(err.message?.includes("API_KEY") ? "Falta la API_KEY en el entorno." : "Error al consultar la IA.");
+      const msg = err.message || "Error desconocido";
+      const userFriendlyMsg = msg.includes("403") 
+        ? "Error 403: La API de Gemini no está habilitada en tu proyecto de Google Cloud."
+        : `Error Gemini: ${msg}`;
+      setError(userFriendlyMsg);
     } finally {
       setIsSearching(false);
     }

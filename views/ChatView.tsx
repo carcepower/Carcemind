@@ -30,14 +30,20 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      // Inicia la IA usando la variable de entorno obligatoria
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Intentamos obtener la clave con el prefijo VITE_ que configuraste en Vercel
+      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      
+      if (!apiKey || apiKey === 'undefined') {
+        throw new Error("API_KEY_NOT_FOUND: No se encuentra la variable VITE_API_KEY. Revisa tu panel de Vercel.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
       
       const systemInstruction = `
-        Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo a navegar por sus recuerdos.
-        Contexto de memorias recientes:
+        Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo a navegar por sus recuerdos de forma profesional y concisa.
+        Contexto de memorias:
         ${memoryContext}
       `;
 
@@ -50,13 +56,14 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         }
       });
 
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: response.text || 'No he podido procesar esa consulta.', timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: response.text || 'Sin respuesta de la IA.', timestamp: new Date() }]);
     } catch (err: any) {
       console.error("Chat Error:", err);
-      const errorText = err.message?.includes("API_KEY") 
-        ? "Error: No se detecta la clave API. Configura la variable API_KEY en Vercel."
-        : "Error de conexión con Gemini. Revisa tu conexión o la validez de la clave.";
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
+      let errorMsg = err.message || "Error desconocido";
+      if (errorMsg.includes("403")) errorMsg = "Error 403: Asegúrate de habilitar 'Generative Language API' en Google Cloud Console.";
+      if (errorMsg.includes("API_KEY")) errorMsg = "Error: La Clave API no es válida o no se detecta.";
+      
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: `Error técnico: ${errorMsg}`, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
