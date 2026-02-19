@@ -2,6 +2,21 @@
 import { GoogleConfig, Memory, Task } from '../types';
 
 export const googleApi = {
+  // Función robusta para obtener la API KEY en entornos Vite/Vercel
+  getApiKey() {
+    const env = (import.meta as any).env;
+    const proc = (process as any).env;
+    
+    // Prioridad: 
+    // 1. import.meta.env.VITE_API_KEY (Estándar Vite)
+    // 2. process.env.VITE_API_KEY (Vercel Node fallback)
+    // 3. process.env.API_KEY (Estándar inyectado)
+    const key = env?.VITE_API_KEY || proc?.VITE_API_KEY || proc?.API_KEY;
+    
+    if (!key || key === 'undefined') return null;
+    return key;
+  },
+
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
     if (!token) {
       throw new Error("TOKEN_MISSING: No hay un token de acceso válido.");

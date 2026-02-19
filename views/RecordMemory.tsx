@@ -60,9 +60,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      // Soporte para prefijo VITE_ exigido por Vite en Vercel
-      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
-      if (!apiKey) throw new Error("Falta la Clave API de Gemini.");
+      // Obtención de clave centralizada
+      const apiKey = googleApi.getApiKey();
+      if (!apiKey) throw new Error("VITE_API_KEY no encontrada. Haz Redeploy en Vercel.");
 
       const ai = new GoogleGenAI({ apiKey });
       
@@ -141,7 +141,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       console.error(err);
       setStatus('error');
       const msg = err.message || "Error desconocido";
-      setErrorMessage(msg.includes("403") ? "Error 403: Activa 'Generative Language API' en Google Cloud." : msg);
+      setErrorMessage(msg.includes("403") ? "Error 403: Activa 'Generative Language API' en tu nuevo proyecto de Google Cloud." : msg);
     }
   };
 

@@ -30,11 +30,11 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      // Intentamos obtener la clave con el prefijo VITE_ que configuraste en Vercel
-      const apiKey = (process.env as any).VITE_API_KEY || process.env.API_KEY;
+      // Uso de la función centralizada que busca VITE_API_KEY
+      const apiKey = googleApi.getApiKey();
       
-      if (!apiKey || apiKey === 'undefined') {
-        throw new Error("API_KEY_NOT_FOUND: No se encuentra la variable VITE_API_KEY. Revisa tu panel de Vercel.");
+      if (!apiKey) {
+        throw new Error("API_KEY_MISSING: La variable VITE_API_KEY no se detecta. Haz un 'Redeploy' en Vercel para aplicar los cambios.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -60,8 +60,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     } catch (err: any) {
       console.error("Chat Error:", err);
       let errorMsg = err.message || "Error desconocido";
-      if (errorMsg.includes("403")) errorMsg = "Error 403: Asegúrate de habilitar 'Generative Language API' en Google Cloud Console.";
-      if (errorMsg.includes("API_KEY")) errorMsg = "Error: La Clave API no es válida o no se detecta.";
+      if (errorMsg.includes("403")) errorMsg = "Error 403: La API de Gemini no está habilitada en tu nuevo proyecto de Google Cloud.";
+      if (errorMsg.includes("API_KEY_INVALID")) errorMsg = "La Clave API es inválida. Verifica que sea la del proyecto CarceMind.";
       
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: `Error técnico: ${errorMsg}`, timestamp: new Date() }]);
     } finally {
