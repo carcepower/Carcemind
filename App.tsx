@@ -31,13 +31,23 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : { isConnected: false, email: null, accessToken: null };
   });
 
+  // HISTORIAL CON CARGA INICIAL DESDE LOCALSTORAGE PARA VELOCIDAD INSTANTÁNEA
   const [memories, setMemories] = useState<Memory[]>([]); 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [chatHistory, setChatHistory] = useState<Message[]>([
-    { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
-  ]);
-  const [mailHistory, setMailHistory] = useState<{ prompt: string, answer: string, results: any[] }[]>([]);
+  
+  const [chatHistory, setChatHistory] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('carcemind_chat_history');
+    return saved ? JSON.parse(saved) : [
+      { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
+    ];
+  });
 
+  const [mailHistory, setMailHistory] = useState<{ prompt: string, answer: string, results: any[] }[]>(() => {
+    const saved = localStorage.getItem('carcemind_mail_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // PERSISTENCIA EN LOCALSTORAGE CUANDO CAMBIAN LOS DATOS
   useEffect(() => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
   }, [googleConfig]);
@@ -46,13 +56,20 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_gmail_config', JSON.stringify(gmailConfig));
   }, [gmailConfig]);
 
-  // Función auxiliar para cargar filas de forma segura
+  useEffect(() => {
+    localStorage.setItem('carcemind_chat_history', JSON.stringify(chatHistory));
+  }, [chatHistory]);
+
+  useEffect(() => {
+    localStorage.setItem('carcemind_mail_history', JSON.stringify(mailHistory));
+  }, [mailHistory]);
+
   const fetchRowsSafe = async (sheetName: string) => {
     try {
       if (!googleConfig.spreadsheetId || !googleConfig.accessToken) return [];
       return await googleApi.getRows(googleConfig.spreadsheetId, sheetName, googleConfig.accessToken);
     } catch (e) {
-      console.warn(`La pestaña ${sheetName} no pudo ser cargada. Es posible que no exista aún.`);
+      console.warn(`La pestaña ${sheetName} no pudo ser cargada.`);
       return [];
     }
   };
@@ -61,7 +78,6 @@ const App: React.FC = () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       try {
-        // Cargamos cada recurso de forma independiente para que un fallo en uno no bloquee los demás
         const [memRows, taskRows, chatRows, mailRows] = await Promise.all([
           fetchRowsSafe('ENTRADAS'),
           fetchRowsSafe('TAREAS'),
@@ -80,35 +96,30 @@ const App: React.FC = () => {
         // Procesar Tareas
         if (taskRows.length > 1) {
           const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], 
-            date: r[1], 
-            title: r[2] || "Tarea sin título", 
-            priority: (r[3] || 'medium').toLowerCase() as any, 
-            status: (r[4] || 'pendiente') as any, 
-            completed: r[4] === 'terminada', 
-            originId: r[5], 
-            deadline: r[6] ? new Date(r[6]) : new Date(), 
-            completedAt: r[7] ? new Date(r[7]) : null
+            id: r[0], date: r[1], title: r[2] || "Tarea sin título", priority: (r[3] || 'medium').toLowerCase() as any, status: (r[4] || 'pendiente') as any, completed: r[4] === 'terminada', originId: r[5], deadline: r[6] ? new Date(r[6]) : new Date(), completedAt: r[7] ? new Date(r[7]) : null
           }));
           setTasks(loadedTasks);
-        } else {
-          setTasks([]);
         }
 
-        // Procesar Historial de Chat
+        // Sincronizar Historial de Chat (Solo si hay cambios)
         if (chatRows.length > 1) {
           const loadedChat = chatRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
             id: r[0], timestamp: new Date(r[1]), role: r[2] as 'user' | 'assistant', text: r[3]
           }));
-          if (loadedChat.length > 0) setChatHistory(loadedChat);
+          // Evitamos sobreescribir si el local ya tiene lo mismo
+          if (loadedChat.length !== chatHistory.length) {
+            setChatHistory(loadedChat);
+          }
         }
 
-        // Procesar Historial de Mail
+        // Sincronizar Historial de Mail
         if (mailRows.length > 1) {
           const loadedMail = mailRows.slice(1).filter((r: any) => r[2]).map((r: any) => ({
             prompt: r[2], answer: r[3], results: JSON.parse(r[4] || '[]')
           }));
-          setMailHistory(loadedMail);
+          if (loadedMail.length !== mailHistory.length) {
+            setMailHistory(loadedMail);
+          }
         }
 
       } catch (error) {
@@ -163,7 +174,7 @@ const App: React.FC = () => {
           {isInitialLoading && (
             <div className="fixed top-8 right-8 hidden md:flex items-center gap-3 bg-[#151823] border border-[#1F2330] px-4 py-2 rounded-full z-[100] animate-in fade-in slide-in-from-top-4 shadow-2xl">
               <RefreshCw className="w-4 h-4 animate-spin text-[#5E7BFF]" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Actualizando...</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Sincronizando...</span>
             </div>
           )}
           {renderView()}
