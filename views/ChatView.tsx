@@ -30,26 +30,18 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      // Standardize API Key usage
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      // Inicia la IA usando la variable de entorno obligatoria
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
       
       const systemInstruction = `
-        Eres el "Consultor Cognitivo" de CarceMind. Tu función es ayudar al usuario (Pablo) a navegar por su memoria externa.
-        Tienes acceso a un índice de sus recuerdos (memorias) y tareas.
-        
-        INSTRUCCIONES:
-        1. Si el usuario pregunta por eventos pasados, usa el contexto de memorias proporcionado.
-        2. Si el usuario pregunta por tareas, infiere qué debe hacer basándote en los resúmenes.
-        3. Si no encuentras una respuesta clara en el contexto corto, sugiere que puede haber más detalles en las transcripciones completas del Excel.
-        4. Responde con un tono profesional, analítico y empático.
-        
-        CONTEXTO DE MEMORIAS RECIENTES:
+        Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo a navegar por sus recuerdos.
+        Contexto de memorias recientes:
         ${memoryContext}
       `;
 
-      const result = await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: input,
         config: {
@@ -58,9 +50,12 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         }
       });
 
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: response.text || 'No he podido procesar esa consulta.', timestamp: new Date() }]);
     } catch (err: any) {
-      const errorText = "Error de conexión con el motor Gemini. Asegúrate de que la clave de API esté configurada correctamente.";
+      console.error("Chat Error:", err);
+      const errorText = err.message?.includes("API_KEY") 
+        ? "Error: No se detecta la clave API. Configura la variable API_KEY en Vercel."
+        : "Error de conexión con Gemini. Revisa tu conexión o la validez de la clave.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -79,7 +74,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-8 pr-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-8 pr-4 scrollbar-hide">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-[#151823]' : 'bg-[#5E7BFF]'}`}>
