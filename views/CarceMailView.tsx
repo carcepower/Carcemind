@@ -13,8 +13,7 @@ import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  Info,
-  ChevronRight
+  Info
 } from 'lucide-react';
 
 interface CarceMailViewProps {
@@ -39,10 +38,10 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email openid',
-        prompt: 'select_account',
+        prompt: 'consent select_account',
         callback: (response: any) => {
           if (response.error) {
-            setError(`Google Error: ${response.error_description || response.error}`);
+            setError(`Error Google: ${response.error} - ${response.error_description || ''}`);
             return;
           }
           if (response.access_token) {
@@ -148,7 +147,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
                <p className="text-[11px] leading-relaxed font-medium uppercase tracking-tight">Aviso importante para el Error 403</p>
              </div>
              <p className="text-[10px] text-[#646B7B] leading-relaxed">
-               Si al pulsar recibes un error de "Acceso Bloqueado", debes entrar en tu <b>Google Cloud Console</b> y añadir este email a la sección de <b>Test Users</b>.
+               Si recibes un error de "Acceso Bloqueado", asegúrate de que el email esté en <b>Test Users</b> y usa el botón <b>Configuración Avanzada</b> si aparece.
              </p>
              <a href="https://console.cloud.google.com/" target="_blank" className="flex items-center gap-2 text-[10px] font-bold text-amber-500 hover:underline">
                Abrir Google Console <ExternalLink size={10} />

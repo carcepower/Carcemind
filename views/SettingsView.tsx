@@ -14,7 +14,9 @@ import {
   ExternalLink,
   Search,
   FileSpreadsheet,
-  PlusCircle
+  PlusCircle,
+  Copy,
+  Terminal
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -31,6 +33,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
   const [fileFoundStatus, setFileFoundStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) {
@@ -38,7 +41,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     }
   }, [config.isConnected, config.accessToken]);
 
-  // Al cambiar la carpeta de hojas, buscamos el archivo automáticamente
   useEffect(() => {
     if (config.isConnected && config.accessToken && config.sheetFolderId) {
       checkForSpreadsheet();
@@ -92,14 +94,19 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     }
   };
 
-  const handleConnect = (promptMode: string = 'select_account') => {
+  const handleConnect = () => {
     setError(null);
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets',
-        prompt: promptMode,
+        // Cambiamos a 'consent' para forzar que Google muestre la pantalla de aviso y permita el bypass de Test User
+        prompt: 'consent select_account',
         callback: (response: any) => {
+          if (response.error) {
+            setError(`Error Google: ${response.error} - ${response.error_description || ''}`);
+            return;
+          }
           if (response.access_token) {
             fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
               headers: { Authorization: `Bearer ${response.access_token}` }
@@ -148,12 +155,43 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     }
   };
 
+  const copyClientId = () => {
+    navigator.clipboard.writeText(CLIENT_ID);
+    alert("Client ID copiado al portapapeles");
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-12 pb-32 animate-in fade-in duration-700">
-      <header className="space-y-2">
-        <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Configuración</p>
-        <h2 className="text-4xl font-semibold tracking-tight">Estructura Cognitiva</h2>
+      <header className="flex justify-between items-end">
+        <div className="space-y-2">
+          <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Configuración</p>
+          <h2 className="text-4xl font-semibold tracking-tight">Estructura Cognitiva</h2>
+        </div>
+        <button 
+          onClick={() => setShowDebug(!showDebug)}
+          className={`p-3 rounded-xl border transition-colors ${showDebug ? 'bg-[#5E7BFF] border-[#5E7BFF] text-white' : 'bg-[#151823] border-[#1F2330] text-[#646B7B]'}`}
+          title="Modo Depuración"
+        >
+          <Terminal size={18} />
+        </button>
       </header>
+
+      {showDebug && (
+        <section className="p-8 rounded-[2rem] bg-[#151823] border border-[#5E7BFF]/30 space-y-4 animate-in slide-in-from-top-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Debug: OAuth Client Check</h4>
+            <button onClick={copyClientId} className="text-[10px] font-bold text-white/50 hover:text-white flex items-center gap-2">
+              <Copy size={12} /> Copiar ID
+            </button>
+          </div>
+          <p className="text-[10px] font-mono text-[#A0A6B1] break-all bg-black/40 p-4 rounded-xl border border-white/5">
+            {CLIENT_ID}
+          </p>
+          <p className="text-[10px] text-[#646B7B] italic">
+            * Comprueba que este ID exacto aparezca en tu sección "Clientes de OAuth" en la consola de Google.
+          </p>
+        </section>
+      )}
 
       {/* Secciones de Configuración */}
       <div className="grid grid-cols-1 gap-8">
@@ -167,7 +205,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
                 </div>
                 <div>
                   <h3 className="text-xl font-medium">Conexión con Google</h3>
-                  <p className="text-[#646B7B] text-sm italic">Paso obligatorio para habilitar el guardado externo.</p>
+                  <p className="text-[#646B7B] text-sm italic">Habilita el guardado externo de tus memorias.</p>
                 </div>
               </div>
               {config.isConnected && (
@@ -179,7 +217,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
             </div>
             
             {!config.isConnected ? (
-              <button onClick={() => handleConnect()} className="w-full md:w-auto px-10 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl">
+              <button onClick={handleConnect} className="w-full md:w-auto px-10 py-5 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-xl">
                 <Chrome size={20} /> Conectar Cuenta
               </button>
             ) : (
