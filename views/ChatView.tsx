@@ -22,12 +22,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [messages, isTyping]);
 
-  const getApiKey = () => {
-    return (import.meta as any).env?.VITE_API_KEY || 
-           (process.env as any)?.VITE_API_KEY || 
-           process.env.API_KEY;
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
@@ -36,12 +30,9 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
     setIsTyping(true);
 
     try {
-      const apiKey = getApiKey();
-      if (!apiKey) throw new Error("API_KEY_NOT_FOUND");
-
-      const ai = new GoogleGenAI({ apiKey });
+      // Standardize API Key usage
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // Construimos un contexto denso para Gemini
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
       
       const systemInstruction = `
@@ -69,7 +60,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig }) => {
 
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', text: result.text, timestamp: new Date() }]);
     } catch (err: any) {
-      const errorText = "Error de conexión con el motor Gemini. Verifica tu clave de API en Vercel o AI Studio.";
+      const errorText = "Error de conexión con el motor Gemini. Asegúrate de que la clave de API esté configurada correctamente.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);

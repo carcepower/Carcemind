@@ -66,7 +66,8 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
     setResults([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      // Correct initialization using the provided environment key
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const extractionPrompt = `
         Hoy es ${new Date().toLocaleDateString()}.

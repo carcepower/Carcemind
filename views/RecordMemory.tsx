@@ -19,12 +19,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const getApiKey = () => {
-    return (import.meta as any).env?.VITE_API_KEY || 
-           (process.env as any)?.VITE_API_KEY || 
-           process.env.API_KEY;
-  };
-
   const startRecording = async () => {
     if (!googleConfig.isConnected) {
       setStatus('error');
@@ -66,13 +60,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
-      const apiKey = getApiKey();
+      // Correct initialization using the environment key
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      if (!apiKey) {
-        throw new Error("VITE_API_KEY no encontrada.");
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await new Promise<string>(r => {
         const reader = new FileReader();
         reader.onloadend = () => r((reader.result as string).split(',')[1]);
@@ -96,7 +86,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
 
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: prompt }] }],
+        contents: { parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: prompt }] },
         config: { responseMimeType: 'application/json' }
       });
 
@@ -127,10 +117,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             new Date().toISOString(),
             task.title,
             task.priority || 'medium',
-            'pendiente', // Usar español para consistencia
+            'pendiente', 
             entryId,
             deadlineDate.toISOString(),
-            '' // Columna FECHA_COMPLETADA vacía inicialmente
+            '' 
           ], googleConfig.accessToken!);
         }
       }
