@@ -31,7 +31,6 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : { isConnected: false, email: null, accessToken: null };
   });
 
-  // ESTADOS ELEVADOS PARA PERSISTENCIA DE SESIÓN
   const [memories, setMemories] = useState<Memory[]>([]); 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [chatHistory, setChatHistory] = useState<Message[]>([
@@ -47,47 +46,73 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_gmail_config', JSON.stringify(gmailConfig));
   }, [gmailConfig]);
 
+  // Función auxiliar para cargar filas de forma segura
+  const fetchRowsSafe = async (sheetName: string) => {
+    try {
+      if (!googleConfig.spreadsheetId || !googleConfig.accessToken) return [];
+      return await googleApi.getRows(googleConfig.spreadsheetId, sheetName, googleConfig.accessToken);
+    } catch (e) {
+      console.warn(`La pestaña ${sheetName} no pudo ser cargada. Es posible que no exista aún.`);
+      return [];
+    }
+  };
+
   const loadData = async () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       try {
+        // Cargamos cada recurso de forma independiente para que un fallo en uno no bloquee los demás
         const [memRows, taskRows, chatRows, mailRows] = await Promise.all([
-          googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'CHAT_LOG', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'MAIL_LOG', googleConfig.accessToken)
+          fetchRowsSafe('ENTRADAS'),
+          fetchRowsSafe('TAREAS'),
+          fetchRowsSafe('CHAT_LOG'),
+          fetchRowsSafe('MAIL_LOG')
         ]);
 
-        // Cargar Memorias
-        const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-          id: r[0], timestamp: new Date(r[1]), title: r[2], excerpt: r[3], emotionalTag: r[4], tags: r[5] ? r[5].split(', ') : [], driveFileId: r[6], driveViewLink: r[7], snippets: r[8] ? r[8].split(' | ') : [], content: r[9] || "", type: 'voice'
-        })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-        // Cargar Tareas
-        const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-          id: r[0], date: r[1], title: r[2] || "Tarea sin título", priority: (r[3] || 'medium').toLowerCase() as any, status: (r[4] || 'pendiente') as any, completed: r[4] === 'terminada', originId: r[5], deadline: r[6] ? new Date(r[6]) : new Date(), completedAt: r[7] ? new Date(r[7]) : null
-        }));
-
-        // Cargar Historial de Chat
-        if (chatRows.length > 1) {
-          const loadedChat = chatRows.slice(1).map((r: any) => ({
-            id: r[0], timestamp: new Date(r[1]), role: r[2] as 'user' | 'assistant', text: r[3]
-          }));
-          setChatHistory(loadedChat);
+        // Procesar Memorias
+        if (memRows.length > 1) {
+          const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+            id: r[0], timestamp: new Date(r[1]), title: r[2], excerpt: r[3], emotionalTag: r[4], tags: r[5] ? r[5].split(', ') : [], driveFileId: r[6], driveViewLink: r[7], snippets: r[8] ? r[8].split(' | ') : [], content: r[9] || "", type: 'voice'
+          })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+          setMemories(loadedMemories);
         }
 
-        // Cargar Historial de Mail
+        // Procesar Tareas
+        if (taskRows.length > 1) {
+          const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+            id: r[0], 
+            date: r[1], 
+            title: r[2] || "Tarea sin título", 
+            priority: (r[3] || 'medium').toLowerCase() as any, 
+            status: (r[4] || 'pendiente') as any, 
+            completed: r[4] === 'terminada', 
+            originId: r[5], 
+            deadline: r[6] ? new Date(r[6]) : new Date(), 
+            completedAt: r[7] ? new Date(r[7]) : null
+          }));
+          setTasks(loadedTasks);
+        } else {
+          setTasks([]);
+        }
+
+        // Procesar Historial de Chat
+        if (chatRows.length > 1) {
+          const loadedChat = chatRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+            id: r[0], timestamp: new Date(r[1]), role: r[2] as 'user' | 'assistant', text: r[3]
+          }));
+          if (loadedChat.length > 0) setChatHistory(loadedChat);
+        }
+
+        // Procesar Historial de Mail
         if (mailRows.length > 1) {
-          const loadedMail = mailRows.slice(1).map((r: any) => ({
+          const loadedMail = mailRows.slice(1).filter((r: any) => r[2]).map((r: any) => ({
             prompt: r[2], answer: r[3], results: JSON.parse(r[4] || '[]')
           }));
           setMailHistory(loadedMail);
         }
 
-        setMemories(loadedMemories);
-        setTasks(loadedTasks);
       } catch (error) {
-        console.error("Error cargando datos del Cloud:", error);
+        console.error("Error crítico cargando datos:", error);
       } finally {
         setIsInitialLoading(false);
       }
@@ -138,7 +163,7 @@ const App: React.FC = () => {
           {isInitialLoading && (
             <div className="fixed top-8 right-8 hidden md:flex items-center gap-3 bg-[#151823] border border-[#1F2330] px-4 py-2 rounded-full z-[100] animate-in fade-in slide-in-from-top-4 shadow-2xl">
               <RefreshCw className="w-4 h-4 animate-spin text-[#5E7BFF]" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Sincronizando Cerebro...</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Actualizando...</span>
             </div>
           )}
           {renderView()}
