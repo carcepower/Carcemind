@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig, BankTransaction } from './types';
+import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './views/Dashboard';
 import RecordMemory from './views/RecordMemory';
@@ -13,12 +13,13 @@ import InstructionsView from './views/InstructionsView';
 import CarceMailView from './views/CarceMailView';
 import BankView from './views/BankView';
 import { googleApi } from './lib/googleApi';
-import { Menu, X, RefreshCw } from 'lucide-react';
+import { Menu, X, RefreshCw, AlertCircle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>(ViewType.DASHBOARD);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
   
   const [googleConfig, setGoogleConfig] = useState<GoogleConfig>(() => {
     const saved = localStorage.getItem('carcemind_google_config');
@@ -64,31 +65,18 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_mail_history', JSON.stringify(mailHistory));
   }, [mailHistory]);
 
-  const fetchRowsSafe = async (ssId: string, sheetName: string) => {
-    try {
-      if (!ssId || !googleConfig.accessToken) return [];
-      return await googleApi.getRows(ssId, sheetName, googleConfig.accessToken);
-    } catch (e) {
-      return [];
-    }
-  };
-
   const loadData = async () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
+      setSessionError(false);
       try {
-        const [
-          memRows, taskRows, chatRows, mailRows, 
-          taCorr, taAho, perCorr, perAho
-        ] = await Promise.all([
-          fetchRowsSafe(googleConfig.spreadsheetId, 'ENTRADAS'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'TAREAS'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'CHAT_LOG'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'MAIL_LOG'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'TA_CORRIENTE'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'TA_AHORRO'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'PERSONAL_CORRIENTE'),
-          fetchRowsSafe(googleConfig.spreadsheetId, 'PERSONAL_AHORRO')
+        const [memRows, taskRows, taCorr, taAho, perCorr, perAho] = await Promise.all([
+          googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
+          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken),
+          googleApi.getRows(googleConfig.spreadsheetId, 'TA_CORRIENTE', googleConfig.accessToken).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId, 'TA_AHORRO', googleConfig.accessToken).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId, 'PERSONAL_CORRIENTE', googleConfig.accessToken).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId, 'PERSONAL_AHORRO', googleConfig.accessToken).catch(() => [])
         ]);
 
         if (memRows.length > 1) {
@@ -113,8 +101,11 @@ const App: React.FC = () => {
         ].filter(t => t.date);
         setBankTrans(combinedFinance);
 
-      } catch (error) {
-        console.error("Error crítico cargando datos:", error);
+      } catch (error: any) {
+        if (error.message === "SESSION_EXPIRED") {
+          setSessionError(true);
+        }
+        console.error("Error cargando datos:", error);
       } finally {
         setIsInitialLoading(false);
       }
@@ -156,6 +147,23 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0B0D12] text-[#F5F7FA] overflow-hidden">
+      {sessionError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-full max-w-lg px-4 animate-in slide-in-from-top-4">
+          <div className="bg-amber-500 text-black p-4 rounded-2xl flex items-center justify-between shadow-2xl font-bold">
+            <div className="flex items-center gap-3">
+              <AlertCircle size={20} />
+              <span className="text-sm">Pablo, tu sesión de Google ha caducado.</span>
+            </div>
+            <button 
+              onClick={() => { setSessionError(false); setActiveView(ViewType.SETTINGS); }}
+              className="bg-black text-white px-4 py-2 rounded-xl text-xs"
+            >
+              Reconectar
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="md:hidden flex items-center justify-between p-6 glass border-b border-[#1F2330] z-[60] safe-area-top">
         <h1 className="text-xl font-bold tracking-tighter bg-gradient-to-r from-[#5E7BFF] to-[#8A6CFF] bg-clip-text text-transparent">CarceMind</h1>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-[#A0A6B1]">{isMobileMenuOpen ? <X /> : <Menu />}</button>

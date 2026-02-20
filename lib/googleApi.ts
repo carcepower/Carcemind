@@ -4,8 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   getApiKey() {
-    // Referencia obligatoria según instrucciones del sistema.
-    // La plataforma mapea las variables de entorno aquí.
+    // La plataforma inyecta automáticamente la clave en process.env.API_KEY
     return process.env.API_KEY;
   },
 
@@ -17,26 +16,24 @@ export const googleApi = {
     usePro?: boolean 
   }) {
     const apiKey = this.getApiKey();
-    if (!apiKey) {
-      console.error("Error crítico: API_KEY no configurada.");
-      throw new Error("CONFIG_ERROR");
+    
+    if (!apiKey || apiKey === "undefined") {
+      console.error("ERROR CRÍTICO: La variable process.env.API_KEY está vacía o no definida.");
+      throw new Error("KEY_MISSING");
     }
     
-    // Inicialización fresca del cliente para evitar estados corruptos
     const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
-    const maxRetries = 3;
+    const maxRetries = 1;
 
     const execute = async (): Promise<any> => {
       try {
-        // Consultor y Mail -> Pro | Grabación -> Flash
         const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         
         const config: any = { 
           model: modelName,
           config: { 
-            temperature: 0.1, // Máxima precisión
-            topP: 0.8,
+            temperature: 0.2, 
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
@@ -56,7 +53,7 @@ export const googleApi = {
             ] 
           };
         } else {
-          contents = params.prompt;
+          contents = { parts: [{ text: params.prompt }] };
         }
 
         const response = await ai.models.generateContent({ ...config, contents });
@@ -67,13 +64,16 @@ export const googleApi = {
         
         return response;
       } catch (error: any) {
-        console.warn(`Intento ${retries + 1} fallido:`, error.message);
+        const errorMsg = error.message || "";
+        console.error("Detalle de error en safeAiCall:", error);
+
+        if (errorMsg.includes('429')) throw new Error("QUOTA_EXCEEDED");
+        if (errorMsg.includes('403')) throw new Error("PERMISSION_DENIED");
+        if (errorMsg.includes('401')) throw new Error("SESSION_EXPIRED");
         
-        // Si es error de cuota o red, reintentamos con espera incremental
         if (retries < maxRetries) {
           retries++;
-          const waitTime = 1500 * Math.pow(2, retries);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
+          await new Promise(resolve => setTimeout(resolve, 1500));
           return execute();
         }
         throw error;
@@ -85,13 +85,21 @@ export const googleApi = {
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
     if (!token) throw new Error("TOKEN_MISSING");
+    
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
-    if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    let response = await fetch(url, { ...options, headers });
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const response = await fetch(url, { ...options, headers });
+    
     if (!response.ok) {
-      if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      throw new Error(`Error ${response.status}`);
+      if (response.status === 401) {
+        console.warn("Token de Google caducado (401).");
+        throw new Error("SESSION_EXPIRED");
+      }
+      throw new Error(`Error API Google: ${response.status}`);
     }
     return response;
   },
@@ -102,7 +110,10 @@ export const googleApi = {
   },
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { method: 'POST', body: JSON.stringify({ values: [values] }) });
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ values: [values] }) 
+    });
   },
 
   async getRows(spreadsheetId: string, sheetName: string, token: string) {
@@ -122,7 +133,10 @@ export const googleApi = {
     const formData = new FormData();
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     formData.append('file', blob);
-    const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { method: 'POST', body: formData });
+    const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { 
+      method: 'POST', 
+      body: formData 
+    });
     return await response.json();
   },
 
@@ -131,7 +145,16 @@ export const googleApi = {
     const rowIndex = rows.findIndex(row => row[0] === id);
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { method: 'POST', body: JSON.stringify({ valueInputOption: 'RAW', data: [{ range: `TAREAS!E${rowNum}`, values: [[status]] }, { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }] }) });
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        valueInputOption: 'RAW', 
+        data: [
+          { range: `TAREAS!E${rowNum}`, values: [[status]] }, 
+          { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }
+        ] 
+      }) 
+    });
   },
 
   async updateTaskDetail(spreadsheetId: string, id: string, newTitle: string, token: string) {
@@ -139,7 +162,10 @@ export const googleApi = {
     const rowIndex = rows.findIndex(row => row[0] === id);
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/TAREAS!C${rowNum}?valueInputOption=RAW`, token, { method: 'PUT', body: JSON.stringify({ values: [[newTitle]] }) });
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/TAREAS!C${rowNum}?valueInputOption=RAW`, token, { 
+      method: 'PUT', 
+      body: JSON.stringify({ values: [[newTitle]] }) 
+    });
   },
 
   async listFolders(token: string) {
@@ -154,7 +180,12 @@ export const googleApi = {
     if (rowIndex === -1) return;
     const ssMetadata = await (await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token)).json();
     const sheetId = ssMetadata.sheets.find((s: any) => s.properties.title === sheetName).properties.sheetId;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { method: 'POST', body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }] }) });
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }] 
+      }) 
+    });
   },
 
   async searchGmail(token: string, query: string, maxResults: number = 5) {
