@@ -34,12 +34,12 @@ const App: React.FC = () => {
 
   const [memories, setMemories] = useState<Memory[]>([]); 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [bankTrans, setBankTrans] = useState<BankTransaction[]>([]);
+  const [bankTrans, setBankTrans] = useState<any[]>([]);
   
   const [chatHistory, setChatHistory] = useState<Message[]>(() => {
     const saved = localStorage.getItem('carcemind_chat_history');
     return saved ? JSON.parse(saved) : [
-      { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas. ¿En qué avanzamos?', timestamp: new Date() }
+      { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas y finanzas. ¿En qué avanzamos?', timestamp: new Date() }
     ];
   });
 
@@ -64,12 +64,11 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_mail_history', JSON.stringify(mailHistory));
   }, [mailHistory]);
 
-  const fetchRowsSafe = async (sheetName: string) => {
+  const fetchRowsSafe = async (ssId: string, sheetName: string) => {
     try {
-      if (!googleConfig.spreadsheetId || !googleConfig.accessToken) return [];
-      return await googleApi.getRows(googleConfig.spreadsheetId, sheetName, googleConfig.accessToken);
+      if (!ssId || !googleConfig.accessToken) return [];
+      return await googleApi.getRows(ssId, sheetName, googleConfig.accessToken);
     } catch (e) {
-      console.warn(`La pestaña ${sheetName} no pudo ser cargada.`);
       return [];
     }
   };
@@ -78,12 +77,18 @@ const App: React.FC = () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       try {
-        const [memRows, taskRows, chatRows, mailRows, bankRows] = await Promise.all([
-          fetchRowsSafe('ENTRADAS'),
-          fetchRowsSafe('TAREAS'),
-          fetchRowsSafe('CHAT_LOG'),
-          fetchRowsSafe('MAIL_LOG'),
-          fetchRowsSafe('BANK_LOG')
+        const [
+          memRows, taskRows, chatRows, mailRows, 
+          taCorr, taAho, perCorr, perAho
+        ] = await Promise.all([
+          fetchRowsSafe(googleConfig.spreadsheetId, 'ENTRADAS'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'TAREAS'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'CHAT_LOG'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'MAIL_LOG'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'TA_CORRIENTE'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'TA_AHORRO'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'PERSONAL_CORRIENTE'),
+          fetchRowsSafe(googleConfig.spreadsheetId, 'PERSONAL_AHORRO')
         ]);
 
         if (memRows.length > 1) {
@@ -100,26 +105,13 @@ const App: React.FC = () => {
           setTasks(loadedTasks);
         }
 
-        if (chatRows.length > 1) {
-          const loadedChat = chatRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], timestamp: new Date(r[1]), role: r[2] as 'user' | 'assistant', text: r[3]
-          }));
-          if (loadedChat.length !== chatHistory.length) setChatHistory(loadedChat);
-        }
-
-        if (mailRows.length > 1) {
-          const loadedMail = mailRows.slice(1).filter((r: any) => r[2]).map((r: any) => ({
-            prompt: r[2], answer: r[3], results: JSON.parse(r[4] || '[]')
-          }));
-          if (loadedMail.length !== mailHistory.length) setMailHistory(loadedMail);
-        }
-
-        if (bankRows.length > 1) {
-          const loadedBank: BankTransaction[] = bankRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], date: r[1], concept: r[2], amount: parseFloat(r[3]), balance: parseFloat(r[4]), bank: r[5] as any, category: r[6] as any
-          }));
-          setBankTrans(loadedBank);
-        }
+        const combinedFinance = [
+          ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
+          ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
+          ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
+          ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
+        ].filter(t => t.date);
+        setBankTrans(combinedFinance);
 
       } catch (error) {
         console.error("Error crítico cargando datos:", error);
@@ -130,6 +122,21 @@ const App: React.FC = () => {
   };
 
   useEffect(() => { loadData(); }, [googleConfig.isConnected, googleConfig.spreadsheetId, googleConfig.accessToken]);
+
+  const renderView = () => {
+    switch (activeView) {
+      case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
+      case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
+      case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} messages={chatHistory} setMessages={setChatHistory} bankData={bankTrans} />;
+      case ViewType.MAIL: return <CarceMailView config={gmailConfig} setConfig={setGmailConfig} history={mailHistory} setHistory={setMailHistory} googleConfig={googleConfig} />;
+      case ViewType.BANK: return <BankView googleConfig={googleConfig} onDataUpdate={loadData} />;
+      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} onRefresh={loadData} isLoading={isInitialLoading} />;
+      case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
+      case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
+      case ViewType.INSTRUCTIONS: return <InstructionsView />;
+      default: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
+    }
+  };
 
   const handleDeleteMemory = async (id: string) => {
     if (!googleConfig.accessToken || !googleConfig.spreadsheetId) return;
@@ -145,21 +152,6 @@ const App: React.FC = () => {
       await googleApi.deleteRowById(googleConfig.spreadsheetId, 'TAREAS', id, googleConfig.accessToken);
       setTasks(prev => prev.filter(t => t.id !== id));
     } catch (e) { console.error(e); }
-  };
-
-  const renderView = () => {
-    switch (activeView) {
-      case ViewType.DASHBOARD: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
-      case ViewType.RECORD: return <RecordMemory onMemoryAdded={() => { loadData(); setActiveView(ViewType.MEMORIES); }} googleConfig={googleConfig} />;
-      case ViewType.CHAT: return <ChatView memories={memories} googleConfig={googleConfig} messages={chatHistory} setMessages={setChatHistory} bankData={bankTrans} />;
-      case ViewType.MAIL: return <CarceMailView config={gmailConfig} setConfig={setGmailConfig} history={mailHistory} setHistory={setMailHistory} googleConfig={googleConfig} />;
-      case ViewType.BANK: return <BankView googleConfig={googleConfig} onDataUpdate={loadData} />;
-      case ViewType.TASKS: return <TasksView tasks={tasks} setTasks={setTasks} googleConfig={googleConfig} onDeleteTask={handleDeleteTask} onRefresh={loadData} isLoading={isInitialLoading} />;
-      case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
-      case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
-      case ViewType.INSTRUCTIONS: return <InstructionsView />;
-      default: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
-    }
   };
 
   return (
