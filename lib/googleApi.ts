@@ -20,7 +20,7 @@ export const googleApi = {
         const config: any = { 
           model: 'gemini-3-flash-preview',
           config: { 
-            temperature: 0.7,
+            temperature: 0.2, // Reducida para mayor precisión en datos numéricos/bancarios
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
@@ -41,7 +41,7 @@ export const googleApi = {
         const result = await ai.models.generateContent({ ...config, contents });
         return result;
       } catch (error: any) {
-        if (error.message?.includes('429') && retries < maxRetries) {
+        if ((error.message?.includes('429') || error.message?.includes('quota')) && retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 3000 * Math.pow(2, retries)));
           return execute();
