@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { 
-  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, Search, FileSpreadsheet, PlusCircle, Copy, Activity, ExternalLink, ChevronRight
+  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -17,8 +17,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [folders, setFolders] = useState<{id: string, name: string}[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
-  const [fileFoundStatus, setFileFoundStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
+  const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | 'finance' | null>(null);
+  
+  const [indexStatus, setIndexStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
+  const [financeStatus, setFinanceStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'not_found' | 'idle'>('idle');
+  const [missingTabs, setMissingTabs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
@@ -26,23 +29,55 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   }, [config.isConnected, config.accessToken]);
 
   useEffect(() => {
-    if (config.isConnected && config.accessToken && config.sheetFolderId) checkForSpreadsheet();
+    if (config.isConnected && config.accessToken && config.sheetFolderId) checkForIndex();
   }, [config.sheetFolderId, config.accessToken]);
 
-  const checkForSpreadsheet = async () => {
+  useEffect(() => {
+    if (config.isConnected && config.accessToken && config.financeFolderId) checkForFinance();
+  }, [config.financeFolderId, config.accessToken]);
+
+  const checkForIndex = async () => {
     if (!config.accessToken || !config.sheetFolderId) return;
-    setFileFoundStatus('searching');
+    setIndexStatus('searching');
     try {
       const file = await googleApi.findFileInFolder(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
       if (file) {
         setConfig(prev => ({ ...prev, spreadsheetId: file.id }));
-        setFileFoundStatus('found');
+        setIndexStatus('found');
       } else {
-        setFileFoundStatus('not_found');
+        setIndexStatus('not_found');
       }
     } catch (e: any) {
       if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
-      setFileFoundStatus('idle');
+      setIndexStatus('idle');
+    }
+  };
+
+  const checkForFinance = async () => {
+    if (!config.accessToken || !config.financeFolderId) return;
+    setFinanceStatus('searching');
+    setMissingTabs([]);
+    try {
+      const file = await googleApi.findFileInFolder(config.accessToken, 'CarceMind_Finance', config.financeFolderId);
+      if (file) {
+        // Validar pestañas
+        const metadata = await googleApi.getSpreadsheetMetadata(file.id, config.accessToken);
+        const existingTabs = metadata.sheets.map((s: any) => s.properties.title);
+        const requiredTabs = ['TA_CORRIENTE', 'TA_AHORRO', 'PERSONAL_CORRIENTE', 'PERSONA_AHORRO'];
+        const missing = requiredTabs.filter(tab => !existingTabs.includes(tab));
+
+        if (missing.length === 0) {
+          setFinanceStatus('found');
+        } else {
+          setMissingTabs(missing);
+          setFinanceStatus('tabs_missing');
+        }
+      } else {
+        setFinanceStatus('not_found');
+      }
+    } catch (e: any) {
+      if (e.message.includes("SESSION_EXPIRED")) handleSessionExpired();
+      setFinanceStatus('idle');
     }
   };
 
@@ -92,17 +127,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   };
 
   const handleDisconnect = () => {
-    // PRESERVACIÓN: Solo borramos el acceso, no la configuración de carpetas
     setConfig(prev => ({ ...prev, isConnected: false, accessToken: null, email: null }));
     setFolders([]);
-    setFileFoundStatus('idle');
+    setIndexStatus('idle');
+    setFinanceStatus('idle');
   };
 
-  const selectFolder = (type: 'audio' | 'sheet', folderId: string, folderName: string) => {
+  const selectFolder = (type: 'audio' | 'sheet' | 'finance', folderId: string, folderName: string) => {
     setConfig(prev => ({
       ...prev,
-      [type === 'audio' ? 'audioFolderId' : 'sheetFolderId']: folderId,
-      [type === 'audio' ? 'audioFolderName' : 'sheetFolderName']: folderName
+      [type === 'audio' ? 'audioFolderId' : type === 'sheet' ? 'sheetFolderId' : 'financeFolderId']: folderId,
+      [type === 'audio' ? 'audioFolderName' : type === 'sheet' ? 'sheetFolderName' : 'financeFolderName']: folderName
     }));
     setActiveFolderSelector(null);
   };
@@ -111,8 +146,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     <div className="max-w-4xl mx-auto space-y-12 pb-32 animate-in fade-in duration-700">
       <header className="flex justify-between items-end">
         <div className="space-y-2">
-          <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Panel Técnico</p>
-          <h2 className="text-4xl font-semibold tracking-tight">Ajustes del Sistema</h2>
+          <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Panel de Control</p>
+          <h2 className="text-4xl font-semibold tracking-tight">Vincular Directorios</h2>
         </div>
         <button onClick={() => setShowDebug(!showDebug)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${showDebug ? 'bg-[#5E7BFF] border-[#5E7BFF] text-white' : 'bg-[#151823] border-[#1F2330] text-[#646B7B]'}`}>
           <Activity size={16} />
@@ -120,16 +155,16 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
         </button>
       </header>
 
-      <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-8 relative overflow-hidden">
-        <div className="flex flex-col md:flex-row justify-between items-start gap-8 relative z-10">
+      <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-8">
+        <div className="flex flex-col md:flex-row justify-between items-start gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-[#5E7BFF]/10 flex items-center justify-center border border-[#5E7BFF]/20">
                 <Chrome className="w-6 h-6 text-[#5E7BFF]" />
               </div>
               <div>
-                <h3 className="text-xl font-medium">Conexión con Google</h3>
-                <p className="text-[#646B7B] text-sm italic">Persistencia activa de directorios.</p>
+                <h3 className="text-xl font-medium">Cuenta de Google Drive</h3>
+                <p className="text-[#646B7B] text-sm italic">Acceso a carpetas de Audio, Índice y Finanzas.</p>
               </div>
             </div>
             {config.isConnected && (
@@ -153,55 +188,95 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       </section>
 
       {config.isConnected && (
-        <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-10 animate-in slide-in-from-bottom-4">
+        <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-10">
           <div className="space-y-2">
             <h3 className="text-xl font-medium">Asignación de Directorios</h3>
-            <p className="text-[#646B7B] text-sm italic">Tus carpetas se mantienen guardadas localmente para tu comodidad.</p>
+            <p className="text-[#646B7B] text-sm italic">CarceMind validará que los archivos existan en estas rutas.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* AUDIOS */}
             <div className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Archivos de Audio</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Ruta de Audios</label>
               <button onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }} className={`w-full p-6 rounded-2xl border text-left flex justify-between items-center transition-all ${config.audioFolderId ? 'bg-[#10B981]/5 border-[#10B981]/30' : 'bg-[#151823] border-[#1F2330]'}`}>
                 <div className="flex items-center gap-3">
                   <FolderOpen size={18} className={config.audioFolderId ? 'text-[#10B981]' : ''} />
-                  <span className="truncate max-w-[150px]">{config.audioFolderName || 'Seleccionar...'}</span>
+                  <span className="truncate max-w-[100px]">{config.audioFolderName || 'Seleccionar...'}</span>
                 </div>
-                {config.audioFolderId && <CheckCircle2 size={16} className="text-[#10B981]" />}
               </button>
             </div>
 
+            {/* INDEX */}
             <div className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#10B981]">Carpeta del Índice</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#8A6CFF]">Ruta de Índice</label>
               <button onClick={() => { loadFolders(); setActiveFolderSelector('sheet'); }} className={`w-full p-6 rounded-2xl border text-left flex justify-between items-center transition-all ${config.sheetFolderId ? 'bg-[#10B981]/5 border-[#10B981]/30' : 'bg-[#151823] border-[#1F2330]'}`}>
                 <div className="flex items-center gap-3">
                   <FileSpreadsheet size={18} className={config.sheetFolderId ? 'text-[#10B981]' : ''} />
-                  <span className="truncate max-w-[150px]">{config.sheetFolderName || 'Seleccionar...'}</span>
+                  <span className="truncate max-w-[100px]">{config.sheetFolderName || 'Seleccionar...'}</span>
                 </div>
-                {config.sheetFolderId && <CheckCircle2 size={16} className="text-[#10B981]" />}
+              </button>
+            </div>
+
+            {/* FINANZAS */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#10B981]">Ruta de Finanzas</label>
+              <button onClick={() => { loadFolders(); setActiveFolderSelector('finance'); }} className={`w-full p-6 rounded-2xl border text-left flex justify-between items-center transition-all ${config.financeFolderId ? 'bg-[#10B981]/5 border-[#10B981]/30' : 'bg-[#151823] border-[#1F2330]'}`}>
+                <div className="flex items-center gap-3">
+                  <Wallet size={18} className={config.financeFolderId ? 'text-[#10B981]' : ''} />
+                  <span className="truncate max-w-[100px]">{config.financeFolderName || 'Seleccionar...'}</span>
+                </div>
               </button>
             </div>
           </div>
 
-          {config.sheetFolderId && (
-            <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* VALIDATION INDEX */}
+            <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
-                  <Search size={16} className="text-[#5E7BFF]" />
-                  <h4>Estado del Índice</h4>
+                  <Database size={16} className="text-[#8A6CFF]" />
+                  <h4>CarceMind_Memory_Index</h4>
                 </div>
-                {fileFoundStatus === 'searching' && <RefreshCw size={14} className="animate-spin text-[#5E7BFF]" />}
+                {indexStatus === 'searching' && <RefreshCw size={14} className="animate-spin text-[#8A6CFF]" />}
               </div>
-              {fileFoundStatus === 'found' && (
-                <div className="flex items-center gap-4 text-[#10B981] bg-[#10B981]/5 p-4 rounded-xl border border-[#10B981]/20 text-[11px]">
-                  <CheckCircle2 size={16} /> <span>Índice CarceMind vinculado y listo.</span>
+              {indexStatus === 'found' ? (
+                <div className="text-[#10B981] text-[10px] font-bold uppercase flex items-center gap-2">
+                  <CheckCircle2 size={14} /> Archivo validado
                 </div>
-              )}
-              {fileFoundStatus === 'not_found' && (
-                <button onClick={() => googleApi.createSpreadsheet(config.accessToken!, 'CarceMind_Memory_Index', config.sheetFolderId!).then(id => { setConfig(p => ({...p, spreadsheetId: id})); setFileFoundStatus('found'); })} className="w-full py-4 rounded-xl bg-[#5E7BFF] text-white font-bold text-[10px] uppercase tracking-widest">Crear Índice de Datos</button>
-              )}
+              ) : indexStatus === 'not_found' ? (
+                <div className="text-red-400 text-[10px] font-bold uppercase flex items-center gap-2">
+                  <AlertCircle size={14} /> No detectado
+                </div>
+              ) : null}
             </div>
-          )}
+
+            {/* VALIDATION FINANCE */}
+            <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
+                  <Wallet size={16} className="text-[#10B981]" />
+                  <h4>CarceMind_Finance</h4>
+                </div>
+                {financeStatus === 'searching' && <RefreshCw size={14} className="animate-spin text-[#10B981]" />}
+              </div>
+              {financeStatus === 'found' ? (
+                <div className="text-[#10B981] text-[10px] font-bold uppercase flex items-center gap-2">
+                  <CheckCircle2 size={14} /> Archivo y 4 pestañas OK
+                </div>
+              ) : financeStatus === 'tabs_missing' ? (
+                <div className="space-y-2">
+                  <div className="text-amber-400 text-[10px] font-bold uppercase flex items-center gap-2">
+                    <AlertCircle size={14} /> Faltan pestañas requeridas
+                  </div>
+                  <p className="text-[9px] text-[#646B7B]">Faltan: {missingTabs.join(', ')}</p>
+                </div>
+              ) : financeStatus === 'not_found' ? (
+                <div className="text-red-400 text-[10px] font-bold uppercase flex items-center gap-2">
+                  <AlertCircle size={14} /> No detectado
+                </div>
+              ) : null}
+            </div>
+          </div>
         </section>
       )}
 
@@ -212,8 +287,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               <h3 className="text-xl font-semibold">Directorios Google Drive</h3>
               <button onClick={() => setActiveFolderSelector(null)} className="text-[#646B7B] text-xs font-bold uppercase">Cerrar</button>
             </header>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-              {loadingFolders ? <Loader2 className="animate-spin mx-auto text-[#5E7BFF]" /> : folders.map(f => (
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-hide">
+              {loadingFolders ? <RefreshCw className="animate-spin mx-auto text-[#5E7BFF]" /> : folders.map(f => (
                 <button key={f.id} onClick={() => selectFolder(activeFolderSelector, f.id, f.name)} className="w-full p-5 bg-[#151823] rounded-2xl border border-[#1F2330] text-left hover:border-[#5E7BFF] transition-all flex items-center gap-3">
                   <FolderOpen size={16} className="text-[#646B7B]" /> <span className="text-sm font-medium">{f.name}</span>
                 </button>
@@ -227,7 +302,5 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     </div>
   );
 };
-
-const Loader2 = ({ className }: { className?: string }) => <RefreshCw className={className} />;
 
 export default SettingsView;
