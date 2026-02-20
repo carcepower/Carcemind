@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { 
-  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Key, Sparkles
+  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Key, Sparkles, ExternalLink
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -18,12 +18,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
+  const [isKeyLinked, setIsKeyLinked] = useState(false);
   
   const [indexStatus, setIndexStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
   const [financeStatus, setFinanceStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'not_found' | 'idle'>('idle');
   const [logsStatus, setLogsStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'idle'>('idle');
   const [missingTabs, setMissingTabs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+
+  useEffect(() => {
+    checkKeyStatus();
+  }, []);
+
+  const checkKeyStatus = async () => {
+    if ((window as any).aistudio?.hasSelectedApiKey) {
+      const linked = await (window as any).aistudio.hasSelectedApiKey();
+      setIsKeyLinked(linked);
+    }
+  };
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) loadFolders();
@@ -37,8 +49,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     try {
       if ((window as any).aistudio) {
         await (window as any).aistudio.openSelectKey();
-        // Forzamos un pequeño refresco lógico
-        window.location.reload(); 
+        // Asumimos éxito según guías para proceder sin bloqueos
+        setIsKeyLinked(true);
       }
     } catch (e) {
       setError("No se pudo abrir el selector de llaves.");
@@ -151,25 +163,28 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
         </button>
       </header>
 
-      {/* API KEY SECTION - CRITICAL FIX */}
+      {/* API KEY SECTION */}
       <section className="p-10 rounded-[3rem] bg-gradient-to-br from-[#1A1E2E] to-[#0B0D12] border border-[#5E7BFF]/30 space-y-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-5"><Key size={120} className="text-[#5E7BFF]" /></div>
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#5E7BFF] flex items-center justify-center shadow-lg shadow-[#5E7BFF44]">
-            <Key className="text-white" size={24} />
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-colors ${isKeyLinked ? 'bg-[#10B981] shadow-[#10B98144]' : 'bg-[#5E7BFF] shadow-[#5E7BFF44]'}`}>
+              {isKeyLinked ? <CheckCircle2 className="text-white" size={28} /> : <Key className="text-white" size={28} />}
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">{isKeyLinked ? 'Llave Inteligente Activa' : 'Vincular Cerebro Gemini'}</h3>
+              <p className="text-[#A0A6B1] text-xs">Se requiere un proyecto de Google Cloud con facturación.</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-xl font-bold">Llave Maestra de Gemini</h3>
-            <p className="text-[#A0A6B1] text-xs">Víncula tu API Key de Google Cloud para activar la inteligencia.</p>
+          
+          <div className="flex flex-col gap-3">
+            <button onClick={handleOpenKeySelector} className={`px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all shadow-xl ${isKeyLinked ? 'bg-white/10 text-white border border-white/20' : 'bg-[#5E7BFF] text-white hover:scale-105'}`}>
+              {isKeyLinked ? 'Cambiar API KEY' : 'Vincular Ahora'}
+            </button>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[9px] text-[#5E7BFF] font-bold uppercase tracking-widest flex items-center gap-1 mx-auto hover:underline">
+              Docs Facturación <ExternalLink size={10} />
+            </a>
           </div>
-        </div>
-        <div className="flex flex-col md:flex-row gap-4 items-center">
-          <button onClick={handleOpenKeySelector} className="w-full md:w-auto px-8 py-4 rounded-2xl bg-[#5E7BFF] text-white font-bold text-xs uppercase tracking-widest hover:scale-105 transition-all shadow-xl">
-            Vincular API KEY (Google Cloud)
-          </button>
-          <p className="text-[10px] text-[#646B7B] max-w-xs italic">
-            * Pablo, esto abrirá el diálogo oficial. Asegúrate de seleccionar un proyecto con facturación activa para evitar el Error 403.
-          </p>
         </div>
       </section>
 

@@ -4,7 +4,8 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   /**
-   * Ejecuta una llamada a Gemini siguiendo estrictamente las guías del SDK.
+   * Ejecuta una llamada a Gemini.
+   * Crea una instancia nueva en cada llamada para asegurar que captura la API KEY recién vinculada.
    */
   async safeAiCall(params: { 
     prompt: string, 
@@ -14,12 +15,15 @@ export const googleApi = {
     usePro?: boolean 
   }) {
     // La clave debe obtenerse exclusivamente de process.env.API_KEY
-    if (!process.env.API_KEY) {
-      console.error("CRÍTICO: process.env.API_KEY no detectada.");
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      console.error("CRÍTICO: process.env.API_KEY es null o undefined.");
       throw new Error("KEY_MISSING");
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Instancia fresca según requerimiento para evitar stale keys
+    const ai = new GoogleGenAI({ apiKey });
     
     try {
       const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
@@ -54,6 +58,12 @@ export const googleApi = {
     } catch (error: any) {
       console.error("Error técnico Gemini:", error);
       const msg = error.message || "";
+      
+      // Regla de negocio: Si la entidad no se encuentra, la llave es inválida o el proyecto no existe
+      if (msg.includes('Requested entity was not found')) {
+        throw new Error("KEY_INVALID_OR_MISSING");
+      }
+      
       if (msg.includes('429')) throw new Error("QUOTA_EXCEEDED");
       if (msg.includes('API key') || msg.includes('set when running')) throw new Error("KEY_MISSING");
       if (msg.includes('403')) throw new Error("PERMISSION_DENIED");
@@ -83,14 +93,16 @@ export const googleApi = {
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
     try {
-      console.log(`Intentando escribir en ${sheetName}:`, values);
+      console.log(`Solicitando escritura en Sheets para: ${sheetName}`);
       const res = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
         method: 'POST', 
         body: JSON.stringify({ values: [values] }) 
       });
-      if (res.ok) console.log(`Éxito al escribir en ${sheetName}`);
+      if (res.ok) {
+        console.log(`CONFIRMADO: Fila añadida en ${sheetName}. Pablo, revisa el FINAL de tu hoja.`);
+      }
     } catch (e: any) {
-      console.warn(`No se pudo escribir en "${sheetName}":`, e.message);
+      console.warn(`Fallo en appendRow (${sheetName}):`, e.message);
     }
   },
 

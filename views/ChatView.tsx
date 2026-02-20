@@ -57,7 +57,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
   const handleOpenKeySelector = async () => {
     if ((window as any).aistudio) {
       await (window as any).aistudio.openSelectKey();
-      window.location.reload();
+      // Permitimos que el usuario reintente sin refrescar para no perder el contexto
     }
   };
 
@@ -100,8 +100,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       console.error("Chat Error:", err);
       let errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro.";
       
-      if (err.message === "KEY_MISSING") {
-        errorText = "API KEY_MISSING: No puedo acceder a mi cerebro. Por favor, pulsa el botón de abajo para vincular una API Key válida.";
+      if (err.message === "KEY_MISSING" || err.message === "KEY_INVALID_OR_MISSING") {
+        errorText = "API KEY REQUERIDA: He perdido mi conexión neuronal. Por favor, pulsa el botón de abajo para activar Gemini.";
       }
 
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
@@ -135,7 +135,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
             </div>
             <div className={`p-6 rounded-[2rem] max-w-[85%] flex flex-col gap-4 ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/5 border border-red-500/10' : 'bg-white/5 border border-white/5'}`}>
               {msg.role === 'assistant' ? <FormattedResponse text={msg.text} /> : <p className="text-sm leading-relaxed">{msg.text}</p>}
-              {msg.text.includes("KEY_MISSING") && (
+              {(msg.text.includes("KEY REQUERIDA") || msg.id === 'err') && (
                 <button onClick={handleOpenKeySelector} className="flex items-center gap-2 w-fit px-4 py-2 bg-red-500 text-white rounded-xl font-bold text-[9px] uppercase tracking-widest hover:scale-105 transition-all">
                   <Key size={12} /> Vincular API KEY
                 </button>
