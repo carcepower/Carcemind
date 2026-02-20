@@ -11,8 +11,7 @@ export const googleApi = {
     return key;
   },
 
-  // Función para llamar a Gemini con reintentos automáticos si hay saturación (Error 429)
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob }) {
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, fileData?: { data: string, mimeType: string } }) {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
@@ -25,30 +24,32 @@ export const googleApi = {
         const config: any = { 
           model: 'gemini-3-flash-preview',
           config: { 
-            temperature: 0.7,
+            temperature: 0.1, // Más bajo para mayor precisión en datos
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
-            ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
+            responseMimeType: 'application/json'
           }
         };
 
-        let contents: any;
+        let parts: any[] = [{ text: params.prompt }];
+        
         if (params.isAudio && params.audioBlob) {
           const base64Audio = await new Promise<string>(r => {
             const reader = new FileReader();
             reader.onloadend = () => r((reader.result as string).split(',')[1]);
             reader.readAsDataURL(params.audioBlob!);
           });
-          contents = { parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: params.prompt }] };
-        } else {
-          contents = params.prompt;
+          parts.unshift({ inlineData: { data: base64Audio, mimeType: 'audio/webm' } });
         }
 
-        const result = await ai.models.generateContent({ ...config, contents });
+        if (params.fileData) {
+          parts.unshift({ inlineData: { data: params.fileData.data, mimeType: params.fileData.mimeType } });
+        }
+
+        const result = await ai.models.generateContent({ ...config, contents: { parts } });
         return result;
       } catch (error: any) {
         if (error.message?.includes('429') && retries < maxRetries) {
           retries++;
-          // Esperamos 3 segundos antes de reintentar
           await new Promise(resolve => setTimeout(resolve, 3000));
           return execute();
         }
@@ -72,6 +73,58 @@ export const googleApi = {
     return response;
   },
 
+  async createSpreadsheet(token: string, name: string, folderId: string) {
+    const response = await this.fetchWithAuth('https://sheets.googleapis.com/v4/spreadsheets', token, { method: 'POST', body: JSON.stringify({ properties: { title: name } }) });
+    const ss = await response.json();
+    const spreadsheetId = ss.spreadsheetId;
+    await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root`, token, { method: 'PATCH' });
+    
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        requests: [
+          { addSheet: { properties: { title: 'ENTRADAS' } } }, 
+          { addSheet: { properties: { title: 'TAREAS' } } }, 
+          { addSheet: { properties: { title: 'CHAT_LOG' } } },
+          { addSheet: { properties: { title: 'MAIL_LOG' } } },
+          { addSheet: { properties: { title: 'BANK_LOG' } } },
+          { deleteSheet: { sheetId: 0 } }
+        ] 
+      }) 
+    });
+
+    await this.appendRow(spreadsheetId, 'ENTRADAS', ['ID', 'FECHA', 'TITULO', 'RESUMEN', 'EMOCION', 'TAGS', 'DRIVE_ID', 'DRIVE_LINK', 'SNIPPETS', 'TEXTO'], token);
+    await this.appendRow(spreadsheetId, 'TAREAS', ['ID', 'FECHA', 'TITULO', 'PRIORIDAD', 'ESTADO', 'ORIGEN', 'DEADLINE', 'COMPLETED'], token);
+    await this.appendRow(spreadsheetId, 'CHAT_LOG', ['ID', 'FECHA', 'ROLE', 'TEXTO'], token);
+    await this.appendRow(spreadsheetId, 'MAIL_LOG', ['ID', 'FECHA', 'PROMPT', 'AI_ANSWER', 'RESULTS_JSON'], token);
+    await this.appendRow(spreadsheetId, 'BANK_LOG', ['ID', 'FECHA', 'CONCEPTO', 'IMPORTE', 'SALDO', 'ENTIDAD', 'CATEGORIA'], token);
+    
+    return spreadsheetId;
+  },
+
+  async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { method: 'POST', body: JSON.stringify({ values: [values] }) });
+  },
+
+  async batchAppendRows(spreadsheetId: string, sheetName: string, rows: any[][], token: string) {
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { method: 'POST', body: JSON.stringify({ values: rows }) });
+  },
+
+  async getRows(spreadsheetId: string, sheetName: string, token: string) {
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A:Z`, token);
+    const data = await response.json();
+    return data.values || [];
+  },
+
+  async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
+    const rows = await this.getRows(spreadsheetId, sheetName, token);
+    const rowIndex = rows.findIndex(row => row[0] === id);
+    if (rowIndex === -1) return;
+    const ssMetadata = await (await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token)).json();
+    const sheetId = ssMetadata.sheets.find((s: any) => s.properties.title === sheetName).properties.sheetId;
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { method: 'POST', body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }] }) });
+  },
+
   async listFolders(token: string) {
     const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("mimeType = 'application/vnd.google-apps.folder' and trashed = false")}&fields=files(id, name)`, token);
     const data = await response.json();
@@ -91,52 +144,6 @@ export const googleApi = {
     formData.append('file', blob);
     const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { method: 'POST', body: formData });
     return await response.json();
-  },
-
-  async createSpreadsheet(token: string, name: string, folderId: string) {
-    const response = await this.fetchWithAuth('https://sheets.googleapis.com/v4/spreadsheets', token, { method: 'POST', body: JSON.stringify({ properties: { title: name } }) });
-    const ss = await response.json();
-    const spreadsheetId = ss.spreadsheetId;
-    await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root`, token, { method: 'PATCH' });
-    
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
-      method: 'POST', 
-      body: JSON.stringify({ 
-        requests: [
-          { addSheet: { properties: { title: 'ENTRADAS' } } }, 
-          { addSheet: { properties: { title: 'TAREAS' } } }, 
-          { addSheet: { properties: { title: 'CHAT_LOG' } } },
-          { addSheet: { properties: { title: 'MAIL_LOG' } } },
-          { deleteSheet: { sheetId: 0 } }
-        ] 
-      }) 
-    });
-
-    await this.appendRow(spreadsheetId, 'ENTRADAS', ['ID', 'FECHA', 'TITULO', 'RESUMEN', 'EMOCION', 'TAGS', 'DRIVE_ID', 'DRIVE_LINK', 'SNIPPETS', 'TEXTO'], token);
-    await this.appendRow(spreadsheetId, 'TAREAS', ['ID', 'FECHA', 'TITULO', 'PRIORIDAD', 'ESTADO', 'ORIGEN', 'DEADLINE', 'COMPLETED'], token);
-    await this.appendRow(spreadsheetId, 'CHAT_LOG', ['ID', 'FECHA', 'ROLE', 'TEXTO'], token);
-    await this.appendRow(spreadsheetId, 'MAIL_LOG', ['ID', 'FECHA', 'PROMPT', 'AI_ANSWER', 'RESULTS_JSON'], token);
-    
-    return spreadsheetId;
-  },
-
-  async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=RAW`, token, { method: 'POST', body: JSON.stringify({ values: [values] }) });
-  },
-
-  async getRows(spreadsheetId: string, sheetName: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A:Z`, token);
-    const data = await response.json();
-    return data.values || [];
-  },
-
-  async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
-    const rows = await this.getRows(spreadsheetId, sheetName, token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) return;
-    const ssMetadata = await (await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token)).json();
-    const sheetId = ssMetadata.sheets.find((s: any) => s.properties.title === sheetName).properties.sheetId;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { method: 'POST', body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }] }) });
   },
 
   async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {

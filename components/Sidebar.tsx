@@ -10,7 +10,8 @@ import {
   Settings,
   BrainCircuit,
   BookOpen,
-  Mail
+  Mail,
+  Wallet
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
     { id: ViewType.DASHBOARD, label: 'CUADRO DE MANDO', icon: LayoutDashboard },
     { id: ViewType.RECORD, label: 'GRABAR', icon: Mic },
     { id: ViewType.CHAT, label: 'CONSULTOR', icon: MessageSquare },
+    { id: ViewType.BANK, label: 'FINANZAS', icon: Wallet },
     { id: ViewType.MAIL, label: 'CARCEMAIL', icon: Mail },
     { id: ViewType.TASKS, label: 'TAREAS', icon: CheckSquare },
     { id: ViewType.MEMORIES, label: 'CRONOLOGÍA', icon: History },
@@ -34,7 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
   const mobileBottomItems = [
     { id: ViewType.DASHBOARD, icon: LayoutDashboard },
     { id: ViewType.RECORD, icon: Mic },
-    { id: ViewType.MAIL, icon: Mail },
+    { id: ViewType.BANK, icon: Wallet },
     { id: ViewType.TASKS, icon: CheckSquare },
     { id: ViewType.SETTINGS, icon: Settings },
   ];
