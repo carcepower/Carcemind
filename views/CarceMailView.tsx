@@ -61,29 +61,27 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     if (!prompt.trim() || isSearching) return;
     setIsSearching(true); setError(null);
     try {
-      // Paso 1: Extraer términos con IA (Usa safeAiCall que maneja la API KEY correctamente)
+      // Usamos el motor centralizado safeAiCall para evitar errores de clave
       const extraction = await googleApi.safeAiCall({
-        prompt: `Extrae términos de búsqueda para Gmail de esta petición: "${prompt}". Devuelve solo los términos.`,
-        systemInstruction: "Eres un asistente de búsqueda. Devuelve únicamente el texto para el buscador de Gmail."
+        prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${prompt}"`,
+        systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave."
       });
 
-      // Paso 2: Buscar en Gmail
       const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
       
       if (messages.length === 0) {
-        const noResults = { prompt, answer: "Pablo, no he encontrado correos relevantes para esa búsqueda.", results: [] };
+        const noResults = { prompt, answer: "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.", results: [] };
         setHistory(prev => [noResults, ...prev]);
         setIsSearching(false);
         return;
       }
 
-      // Paso 3: Analizar contenidos
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
-      const snippets = detailed.map(m => `Asunto: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Fragmento: ${m.snippet}`).join('\n');
+      const snippets = detailed.map(m => `Asunto: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Resumen: ${m.snippet}`).join('\n');
       
       const answer = await googleApi.safeAiCall({
-        prompt: `Analiza estos correos y responde a Pablo: "${prompt}"\n\nCorreos:\n${snippets}`,
-        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva y profesional.",
+        prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${prompt}"`,
+        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa.",
         usePro: true
       });
       
@@ -97,7 +95,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
 
     } catch (err: any) { 
       console.error("Gmail Analysis Error:", err);
-      setError("Error al procesar la solicitud. Por favor, revisa tu conexión."); 
+      setError("He tenido un problema al analizar tus correos. Por favor, reintenta en unos segundos."); 
     } finally { 
       setIsSearching(false); 
     }

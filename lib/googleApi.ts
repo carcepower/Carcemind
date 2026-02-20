@@ -4,30 +4,39 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   getApiKey() {
-    // Referencia exclusiva a la variable de entorno del sistema
+    // Referencia obligatoria según instrucciones del sistema.
+    // La plataforma mapea las variables de entorno aquí.
     return process.env.API_KEY;
   },
 
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
+  async safeAiCall(params: { 
+    prompt: string, 
+    systemInstruction?: string, 
+    isAudio?: boolean, 
+    audioBlob?: Blob, 
+    usePro?: boolean 
+  }) {
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      console.error("Configuración de API KEY no detectada en el entorno.");
-      throw new Error("API_KEY_MISSING");
+      console.error("Error crítico: API_KEY no configurada.");
+      throw new Error("CONFIG_ERROR");
     }
     
+    // Inicialización fresca del cliente para evitar estados corruptos
     const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
-    const maxRetries = 2;
+    const maxRetries = 3;
 
     const execute = async (): Promise<any> => {
       try {
-        // Usamos Gemini 3 Pro para análisis de datos masivos (Consultor/Mail) y Flash para audios
+        // Consultor y Mail -> Pro | Grabación -> Flash
         const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         
         const config: any = { 
           model: modelName,
           config: { 
-            temperature: 0.1, // Máxima precisión para evitar errores en importes bancarios
+            temperature: 0.1, // Máxima precisión
+            topP: 0.8,
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
@@ -40,18 +49,31 @@ export const googleApi = {
             reader.onloadend = () => r((reader.result as string).split(',')[1]);
             reader.readAsDataURL(params.audioBlob!);
           });
-          contents = { parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: params.prompt }] };
+          contents = { 
+            parts: [
+              { inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, 
+              { text: params.prompt }
+            ] 
+          };
         } else {
           contents = params.prompt;
         }
 
-        const result = await ai.models.generateContent({ ...config, contents });
-        return result;
+        const response = await ai.models.generateContent({ ...config, contents });
+        
+        if (!response || !response.text) {
+          throw new Error("EMPTY_RESPONSE");
+        }
+        
+        return response;
       } catch (error: any) {
-        // Gestión de saturación de cuota (429) con espera progresiva
-        if ((error.message?.includes('429') || error.message?.toLowerCase().includes('quota')) && retries < maxRetries) {
+        console.warn(`Intento ${retries + 1} fallido:`, error.message);
+        
+        // Si es error de cuota o red, reintentamos con espera incremental
+        if (retries < maxRetries) {
           retries++;
-          await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, retries)));
+          const waitTime = 1500 * Math.pow(2, retries);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
           return execute();
         }
         throw error;

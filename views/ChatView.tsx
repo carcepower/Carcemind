@@ -70,44 +70,47 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      // RESTAURACIÓN: Formato de lista detallada (50 memorias, 100 transacciones)
-      // Este formato es el que Gemini Pro interpreta con mayor precisión numérica.
+      // Formato estructurado para Gemini Pro
       const memoryContext = memories.slice(0, 50).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-100).map(t => `- ${t.date}: ${t.concept} | Importe: ${t.amount}€ | Cuenta: ${t.type}`).join('\n');
+      const bankContext = bankData.slice(-100).map(t => `- Fecha: ${t.date} | Concepto: ${t.concept} | Importe: ${t.amount}€ | Cuenta: ${t.type}`).join('\n');
       
       const systemInstruction = `
-        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y de alta capacidad analítica.
+        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.
         
-        SISTEMA DE DATOS (Archivo Maestro):
-        - TALENT ACADEMY (Empresa): Datos etiquetados como "TA".
-        - PABLO CARCELÉN (Personal): Datos etiquetados como "Personal".
+        CONTEXTO MAESTRO:
+        - TALENT ACADEMY (Empresa): Datos marcados como "TA".
+        - PABLO CARCELÉN (Personal): Datos marcados como "Personal".
         
-        MOVIMIENTOS BANCARIOS RECIENTES:
+        DATOS FINANCIEROS (100 últimos):
         ${bankContext}
         
-        MEMORIAS Y RECUERDOS RECIENTES:
+        MEMORIAS (50 últimas):
         ${memoryContext}
         
-        REGLAS DE RESPUESTA:
-        1. Tu acceso es TOTAL a los datos arriba listados.
-        2. Analiza con precisión: si pregunta por un gasto (ej: Consum), busca en todas las cuentas bancarias proporcionadas.
-        3. Si no encuentras el dato, indícalo claramente.
-        4. Cruza memorias con finanzas si existe relación temporal o temática.
+        MÉTODO:
+        1. Analiza con precisión matemática. 
+        2. Tono elegante y ejecutivo.
+        3. Si no hay datos, dilo con naturalidad pero sin inventar.
       `;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
         systemInstruction,
-        usePro: true // Modelo Pro para análisis complejo
+        usePro: true 
       });
 
-      const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
+      const aiMsg: Message = { 
+        id: (Date.now() + 1).toString(), 
+        role: 'assistant', 
+        text: response.text || 'No he podido procesar esa consulta ahora mismo, Pablo.', 
+        timestamp: new Date() 
+      };
       setMessages(prev => [...prev, aiMsg]);
       
       saveToCloud(aiMsg);
     } catch (err: any) {
       console.error("Chat Error:", err);
-      const errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro. Por favor, reintenta en unos segundos.";
+      const errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro. Esto suele ocurrir si la red es inestable o la clave de API tarda en validar. Por favor, reintenta en unos segundos.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
