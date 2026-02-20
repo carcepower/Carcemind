@@ -3,6 +3,10 @@ import { GoogleConfig, Memory, Task } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
+  /**
+   * Ejecuta una llamada a Gemini siguiendo estrictamente las guías del SDK.
+   * Se asume que process.env.API_KEY es proporcionado por el entorno.
+   */
   async safeAiCall(params: { 
     prompt: string, 
     systemInstruction?: string, 
@@ -10,69 +14,51 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    // Inicializamos directamente según las guías del SDK para asegurar la captura de la clave inyectada
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Inicialización limpia según documentación oficial
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    let retries = 0;
-    const maxRetries = 1;
-
-    const execute = async (): Promise<any> => {
-      try {
-        const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-        
-        const config: any = { 
-          model: modelName,
-          config: { 
-            temperature: 0.2, 
-            ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
-            ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
-          }
+    try {
+      const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+      
+      let contents: any;
+      if (params.isAudio && params.audioBlob) {
+        const base64Audio = await new Promise<string>(r => {
+          const reader = new FileReader();
+          reader.onloadend = () => r((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(params.audioBlob!);
+        });
+        contents = { 
+          parts: [
+            { inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, 
+            { text: params.prompt }
+          ] 
         };
-
-        let contents: any;
-        if (params.isAudio && params.audioBlob) {
-          const base64Audio = await new Promise<string>(r => {
-            const reader = new FileReader();
-            reader.onloadend = () => r((reader.result as string).split(',')[1]);
-            reader.readAsDataURL(params.audioBlob!);
-          });
-          contents = { 
-            parts: [
-              { inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, 
-              { text: params.prompt }
-            ] 
-          };
-        } else {
-          contents = { parts: [{ text: params.prompt }] };
-        }
-
-        const response = await ai.models.generateContent({ ...config, contents });
-        
-        if (!response || !response.text) {
-          throw new Error("EMPTY_RESPONSE");
-        }
-        
-        return response;
-      } catch (error: any) {
-        const errorMsg = error.message || "";
-        console.error("Detalle técnico Gemini API:", error);
-
-        if (errorMsg.includes('429')) throw new Error("QUOTA_EXCEEDED");
-        if (errorMsg.includes('403')) throw new Error("PERMISSION_DENIED");
-        if (errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('not found')) {
-          throw new Error("CONFIG_ERROR");
-        }
-        
-        if (retries < maxRetries) {
-          retries++;
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          return execute();
-        }
-        throw error;
+      } else {
+        contents = { parts: [{ text: params.prompt }] };
       }
-    };
 
-    return execute();
+      // Llamada directa al modelo
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: contents,
+        config: {
+          systemInstruction: params.systemInstruction,
+          temperature: 0.2,
+          ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
+        }
+      });
+      
+      return response;
+    } catch (error: any) {
+      console.error("Error técnico Gemini:", error);
+      
+      const msg = error.message || "";
+      if (msg.includes('429')) throw new Error("QUOTA_EXCEEDED");
+      if (msg.includes('API key')) throw new Error("KEY_MISSING");
+      if (msg.includes('403')) throw new Error("PERMISSION_DENIED");
+      
+      throw error;
+    }
   },
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
@@ -88,7 +74,7 @@ export const googleApi = {
     
     if (!response.ok) {
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      throw new Error(`Error ${response.status}`);
+      throw new Error(`Error API Google: ${response.status}`);
     }
     return response;
   },
@@ -105,8 +91,8 @@ export const googleApi = {
         body: JSON.stringify({ values: [values] }) 
       });
     } catch (e) {
-      // Si falla el log (error 400 por falta de pestaña), no bloqueamos la app
-      console.warn(`No se pudo guardar log en ${sheetName}. Probablemente la pestaña no existe.`);
+      // Manejo silencioso: si las pestañas CHAT_LOG o MAIL_LOG no existen aún, avisamos pero no rompemos la app
+      console.warn(`Aviso de Estructura: No se pudo escribir en "${sheetName}". Asegúrate de que la pestaña exista en tu Excel.`);
     }
   },
 
