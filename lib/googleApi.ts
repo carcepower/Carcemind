@@ -1,5 +1,6 @@
 
 import { GoogleConfig, Memory, Task } from '../types';
+import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   getApiKey() {
@@ -8,6 +9,54 @@ export const googleApi = {
     const key = env?.VITE_API_KEY || proc?.VITE_API_KEY || proc?.API_KEY;
     if (!key || key === 'undefined') return null;
     return key;
+  },
+
+  // Función para llamar a Gemini con reintentos automáticos si hay saturación (Error 429)
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob }) {
+    const apiKey = this.getApiKey();
+    if (!apiKey) throw new Error("API_KEY_MISSING");
+    
+    const ai = new GoogleGenAI({ apiKey });
+    let retries = 0;
+    const maxRetries = 2;
+
+    const execute = async (): Promise<any> => {
+      try {
+        const config: any = { 
+          model: 'gemini-3-flash-preview',
+          config: { 
+            temperature: 0.7,
+            ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
+            ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
+          }
+        };
+
+        let contents: any;
+        if (params.isAudio && params.audioBlob) {
+          const base64Audio = await new Promise<string>(r => {
+            const reader = new FileReader();
+            reader.onloadend = () => r((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(params.audioBlob!);
+          });
+          contents = { parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: params.prompt }] };
+        } else {
+          contents = params.prompt;
+        }
+
+        const result = await ai.models.generateContent({ ...config, contents });
+        return result;
+      } catch (error: any) {
+        if (error.message?.includes('429') && retries < maxRetries) {
+          retries++;
+          // Esperamos 3 segundos antes de reintentar
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          return execute();
+        }
+        throw error;
+      }
+    };
+
+    return execute();
   },
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
@@ -50,7 +99,6 @@ export const googleApi = {
     const spreadsheetId = ss.spreadsheetId;
     await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=root`, token, { method: 'PATCH' });
     
-    // Crear todas las pestañas necesarias: ENTRADAS, TAREAS, CHAT_LOG, MAIL_LOG
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
       method: 'POST', 
       body: JSON.stringify({ 

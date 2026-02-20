@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { GoogleGenAI } from '@google/genai';
 import { Send, Sparkles, User, BrainCircuit, Loader2 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -61,29 +60,28 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     setInput('');
     setIsTyping(true);
     
-    // Guardar mensaje del usuario
     saveToCloud(userMsg);
 
     try {
-      const apiKey = googleApi.getApiKey();
-      if (!apiKey) throw new Error("API_KEY_MISSING");
-      const ai = new GoogleGenAI({ apiKey });
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
       const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. Contexto: ${memoryContext}`;
       
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: input,
-        config: { systemInstruction, temperature: 0.7 }
+      const response = await googleApi.safeAiCall({
+        prompt: input,
+        systemInstruction
       });
 
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
       setMessages(prev => [...prev, aiMsg]);
       
-      // Guardar respuesta de la IA
       saveToCloud(aiMsg);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: "Error técnico en la red neuronal.", timestamp: new Date() }]);
+      const isQuotaError = err.message?.includes('429');
+      const errorText = isQuotaError 
+        ? "El servidor está algo saturado ahora mismo. Por favor, espera 15 segundos y vuelve a intentarlo." 
+        : "Lo siento, ha habido un error técnico. ¿Podrías repetir la pregunta?";
+      
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
