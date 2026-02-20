@@ -3,11 +3,6 @@ import { GoogleConfig, Memory, Task } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
-  getApiKey() {
-    // La plataforma inyecta automáticamente la clave en process.env.API_KEY
-    return process.env.API_KEY;
-  },
-
   async safeAiCall(params: { 
     prompt: string, 
     systemInstruction?: string, 
@@ -15,14 +10,9 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    const apiKey = this.getApiKey();
+    // Inicializamos directamente según las guías del SDK para asegurar la captura de la clave inyectada
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     
-    if (!apiKey || apiKey === "undefined") {
-      console.error("ERROR CRÍTICO: La variable process.env.API_KEY está vacía o no definida.");
-      throw new Error("KEY_MISSING");
-    }
-    
-    const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
     const maxRetries = 1;
 
@@ -65,11 +55,13 @@ export const googleApi = {
         return response;
       } catch (error: any) {
         const errorMsg = error.message || "";
-        console.error("Detalle de error en safeAiCall:", error);
+        console.error("Detalle técnico Gemini API:", error);
 
         if (errorMsg.includes('429')) throw new Error("QUOTA_EXCEEDED");
         if (errorMsg.includes('403')) throw new Error("PERMISSION_DENIED");
-        if (errorMsg.includes('401')) throw new Error("SESSION_EXPIRED");
+        if (errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('not found')) {
+          throw new Error("CONFIG_ERROR");
+        }
         
         if (retries < maxRetries) {
           retries++;
@@ -95,11 +87,8 @@ export const googleApi = {
     const response = await fetch(url, { ...options, headers });
     
     if (!response.ok) {
-      if (response.status === 401) {
-        console.warn("Token de Google caducado (401).");
-        throw new Error("SESSION_EXPIRED");
-      }
-      throw new Error(`Error API Google: ${response.status}`);
+      if (response.status === 401) throw new Error("SESSION_EXPIRED");
+      throw new Error(`Error ${response.status}`);
     }
     return response;
   },
@@ -110,10 +99,15 @@ export const googleApi = {
   },
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
-      method: 'POST', 
-      body: JSON.stringify({ values: [values] }) 
-    });
+    try {
+      await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
+        method: 'POST', 
+        body: JSON.stringify({ values: [values] }) 
+      });
+    } catch (e) {
+      // Si falla el log (error 400 por falta de pestaña), no bloqueamos la app
+      console.warn(`No se pudo guardar log en ${sheetName}. Probablemente la pestaña no existe.`);
+    }
   },
 
   async getRows(spreadsheetId: string, sheetName: string, token: string) {
