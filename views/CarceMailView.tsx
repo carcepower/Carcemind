@@ -63,9 +63,20 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     
     setIsSearching(true); 
     setError(null);
-    
+    setPrompt(''); // Limpiamos la UI inmediatamente para dar sensación de velocidad
+
     try {
-      // 1. Extraer términos de búsqueda
+      // 1. GUARDAR CONSULTA DEL USUARIO EN LOG INMEDIATAMENTE
+      if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
+        await googleApi.appendRow(
+          googleConfig.spreadsheetId, 
+          'MAIL_LOG', 
+          [Date.now().toString(), new Date().toISOString(), "USER", currentPrompt, ""], 
+          googleConfig.accessToken
+        );
+      }
+
+      // 2. Extraer términos de búsqueda con Gemini
       const extraction = await googleApi.safeAiCall({
         prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${currentPrompt}"`,
         systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave, sin explicaciones."
@@ -73,58 +84,56 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
 
       const searchTerms = extraction.text?.trim() || currentPrompt;
 
-      // 2. Buscar en Gmail
+      // 3. Buscar en Gmail
       const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 5);
       
       if (!messages || messages.length === 0) {
-        const noResults = { prompt: currentPrompt, answer: "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.", results: [] };
-        setHistory(prev => [noResults, ...prev]);
-        setPrompt('');
-        setIsSearching(false);
+        const noResultsText = "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.";
+        setHistory(prev => [{ prompt: currentPrompt, answer: noResultsText, results: [] }, ...prev]);
+        
+        // Log de respuesta vacía
+        if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
+          await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", noResultsText, searchTerms], googleConfig.accessToken);
+        }
         return;
       }
 
-      // 3. Obtener detalles de correos
+      // 4. Obtener detalles de correos
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
       const snippets = detailed.map(m => {
         const subject = m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto';
         return `Asunto: ${subject} | Resumen: ${m.snippet}`;
       }).join('\n');
       
-      // 4. Generar respuesta final con Gemini
+      // 5. Generar respuesta final con Gemini
       const response = await googleApi.safeAiCall({
         prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
         systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa. Si hay fechas o datos clave, destácalos.",
         usePro: true
       });
       
-      const answerText = response.text || "No he podido extraer una conclusión clara de estos correos.";
-      const newInteraction = { prompt: currentPrompt, answer: answerText, results: detailed };
+      const answerText = response.text || "No he podido extraer una conclusión clara.";
       
-      // 5. Actualizar historial en UI
-      setHistory(prev => [newInteraction, ...prev]);
+      // 6. Actualizar UI
+      setHistory(prev => [{ prompt: currentPrompt, answer: answerText, results: detailed }, ...prev]);
       
-      // 6. GUARDAR EN LOG (Antes de limpiar el input para asegurar consistencia)
+      // 7. GUARDAR RESPUESTA DE LA IA EN LOG
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
         await googleApi.appendRow(
           googleConfig.spreadsheetId, 
           'MAIL_LOG', 
-          [
-            Date.now().toString(), 
-            new Date().toISOString(), 
-            currentPrompt, 
-            answerText, 
-            searchTerms
-          ], 
+          [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], 
           googleConfig.accessToken
         );
       }
 
-      setPrompt(''); // Limpiar ahora que todo se ha guardado
-
     } catch (err: any) { 
       console.error("Gmail Analysis Error:", err);
-      setError("He tenido un problema al analizar tus correos. Por favor, reintenta en unos segundos."); 
+      let userMsg = "He tenido un problema al analizar tus correos.";
+      if (err.message === "KEY_MISSING") {
+        userMsg = "Error: La API KEY de Gemini no está configurada correctamente en el entorno.";
+      }
+      setError(userMsg); 
     } finally { 
       setIsSearching(false); 
     }
@@ -162,7 +171,14 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
         </button>
       </div>
 
-      {error && <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex items-center gap-4"><AlertCircle size={20} /> <p className="text-sm">{error}</p></div>}
+      {error && (
+        <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex flex-col gap-2">
+          <div className="flex items-center gap-4">
+            <AlertCircle size={20} /> <p className="text-sm font-bold uppercase tracking-widest">Atención</p>
+          </div>
+          <p className="text-xs pl-9 opacity-80">{error}</p>
+        </div>
+      )}
 
       <div className="space-y-16">
         {history.map((interaction, i) => (

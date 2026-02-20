@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 export const googleApi = {
   /**
    * Ejecuta una llamada a Gemini siguiendo estrictamente las guías del SDK.
-   * Se asume que process.env.API_KEY es proporcionado por el entorno.
+   * Se accede a process.env.API_KEY directamente en cada llamada.
    */
   async safeAiCall(params: { 
     prompt: string, 
@@ -14,8 +14,14 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    // Inicialización limpia según documentación oficial
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Verificación de seguridad previa
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.error("CRÍTICO: process.env.API_KEY no detectada en el entorno.");
+      throw new Error("KEY_MISSING");
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     
     try {
       const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
@@ -37,7 +43,6 @@ export const googleApi = {
         contents = { parts: [{ text: params.prompt }] };
       }
 
-      // Llamada directa al modelo
       const response = await ai.models.generateContent({
         model: modelName,
         contents: contents,
@@ -51,27 +56,22 @@ export const googleApi = {
       return response;
     } catch (error: any) {
       console.error("Error técnico Gemini:", error);
-      
       const msg = error.message || "";
       if (msg.includes('429')) throw new Error("QUOTA_EXCEEDED");
-      if (msg.includes('API key')) throw new Error("KEY_MISSING");
+      if (msg.includes('API key') || msg.includes('set when running')) throw new Error("KEY_MISSING");
       if (msg.includes('403')) throw new Error("PERMISSION_DENIED");
-      
       throw error;
     }
   },
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
     if (!token) throw new Error("TOKEN_MISSING");
-    
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     if (options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-
     const response = await fetch(url, { ...options, headers });
-    
     if (!response.ok) {
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
       throw new Error(`Error API Google: ${response.status}`);
@@ -86,14 +86,14 @@ export const googleApi = {
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
     try {
-      console.log(`Intentando escribir log en pestaña: ${sheetName}...`);
+      console.log(`Intentando escribir en ${sheetName}:`, values);
       await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
         method: 'POST', 
         body: JSON.stringify({ values: [values] }) 
       });
-      console.log(`Log guardado con éxito en ${sheetName}.`);
+      console.log(`Éxito al escribir en ${sheetName}`);
     } catch (e: any) {
-      console.warn(`Aviso de Estructura: No se pudo escribir en "${sheetName}". Detalles:`, e.message);
+      console.warn(`No se pudo escribir en "${sheetName}":`, e.message);
     }
   },
 
