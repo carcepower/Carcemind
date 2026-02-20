@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
 import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
+import React, { useState } from 'react';
 
 interface CarceMailViewProps { 
   config: GmailConfig; 
@@ -58,40 +58,69 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
   };
 
   const handleSearch = async () => {
-    if (!prompt.trim() || isSearching) return;
-    setIsSearching(true); setError(null);
+    const currentPrompt = prompt.trim();
+    if (!currentPrompt || isSearching) return;
+    
+    setIsSearching(true); 
+    setError(null);
+    
     try {
-      // Usamos el motor centralizado safeAiCall para evitar errores de clave
+      // 1. Extraer términos de búsqueda
       const extraction = await googleApi.safeAiCall({
-        prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${prompt}"`,
-        systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave."
+        prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${currentPrompt}"`,
+        systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave, sin explicaciones."
       });
 
-      const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
+      const searchTerms = extraction.text?.trim() || currentPrompt;
+
+      // 2. Buscar en Gmail
+      const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 5);
       
-      if (messages.length === 0) {
-        const noResults = { prompt, answer: "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.", results: [] };
+      if (!messages || messages.length === 0) {
+        const noResults = { prompt: currentPrompt, answer: "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.", results: [] };
         setHistory(prev => [noResults, ...prev]);
+        setPrompt('');
         setIsSearching(false);
         return;
       }
 
+      // 3. Obtener detalles de correos
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
-      const snippets = detailed.map(m => `Asunto: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Resumen: ${m.snippet}`).join('\n');
+      const snippets = detailed.map(m => {
+        const subject = m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto';
+        return `Asunto: ${subject} | Resumen: ${m.snippet}`;
+      }).join('\n');
       
-      const answer = await googleApi.safeAiCall({
-        prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${prompt}"`,
-        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa.",
+      // 4. Generar respuesta final con Gemini
+      const response = await googleApi.safeAiCall({
+        prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
+        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa. Si hay fechas o datos clave, destácalos.",
         usePro: true
       });
       
-      const newInteraction = { prompt, answer: answer.text, results: detailed };
+      const answerText = response.text || "No he podido extraer una conclusión clara de estos correos.";
+      const newInteraction = { prompt: currentPrompt, answer: answerText, results: detailed };
+      
+      // 5. Actualizar historial en UI
       setHistory(prev => [newInteraction, ...prev]);
-      setPrompt('');
-
+      
+      // 6. GUARDAR EN LOG (Antes de limpiar el input para asegurar consistencia)
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), prompt, answer.text, ""], googleConfig.accessToken);
+        await googleApi.appendRow(
+          googleConfig.spreadsheetId, 
+          'MAIL_LOG', 
+          [
+            Date.now().toString(), 
+            new Date().toISOString(), 
+            currentPrompt, 
+            answerText, 
+            searchTerms
+          ], 
+          googleConfig.accessToken
+        );
       }
+
+      setPrompt(''); // Limpiar ahora que todo se ha guardado
 
     } catch (err: any) { 
       console.error("Gmail Analysis Error:", err);
@@ -120,8 +149,17 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
 
       <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-8 flex items-center gap-6 shadow-2xl">
         <Search className="text-[#646B7B]" />
-        <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Busca en tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
-        <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">{isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}</button>
+        <input 
+          type="text" 
+          value={prompt} 
+          onChange={(e) => setPrompt(e.target.value)} 
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} 
+          placeholder="Busca en tus correos..." 
+          className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" 
+        />
+        <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">
+          {isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}
+        </button>
       </div>
 
       {error && <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex items-center gap-4"><AlertCircle size={20} /> <p className="text-sm">{error}</p></div>}

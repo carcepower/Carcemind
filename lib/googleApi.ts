@@ -86,13 +86,14 @@ export const googleApi = {
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
     try {
+      console.log(`Intentando escribir log en pestaña: ${sheetName}...`);
       await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
         method: 'POST', 
         body: JSON.stringify({ values: [values] }) 
       });
-    } catch (e) {
-      // Manejo silencioso: si las pestañas CHAT_LOG o MAIL_LOG no existen aún, avisamos pero no rompemos la app
-      console.warn(`Aviso de Estructura: No se pudo escribir en "${sheetName}". Asegúrate de que la pestaña exista en tu Excel.`);
+      console.log(`Log guardado con éxito en ${sheetName}.`);
+    } catch (e: any) {
+      console.warn(`Aviso de Estructura: No se pudo escribir en "${sheetName}". Detalles:`, e.message);
     }
   },
 
