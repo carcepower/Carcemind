@@ -4,12 +4,16 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   getApiKey() {
+    // Referencia exclusiva a la variable de entorno del sistema
     return process.env.API_KEY;
   },
 
   async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
     const apiKey = this.getApiKey();
-    if (!apiKey) throw new Error("API_KEY_MISSING");
+    if (!apiKey) {
+      console.error("Configuración de API KEY no detectada en el entorno.");
+      throw new Error("API_KEY_MISSING");
+    }
     
     const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
@@ -17,13 +21,13 @@ export const googleApi = {
 
     const execute = async (): Promise<any> => {
       try {
-        // Usamos Pro para consultas complejas de historial, Flash para ingesta rápida de audio
+        // Usamos Gemini 3 Pro para análisis de datos masivos (Consultor/Mail) y Flash para audios
         const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
         
         const config: any = { 
           model: modelName,
           config: { 
-            temperature: 0.1, // Mínima temperatura para máxima precisión en datos bancarios
+            temperature: 0.1, // Máxima precisión para evitar errores en importes bancarios
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
@@ -44,10 +48,9 @@ export const googleApi = {
         const result = await ai.models.generateContent({ ...config, contents });
         return result;
       } catch (error: any) {
-        const isQuotaError = error.message?.includes('429') || error.message?.includes('quota');
-        if (isQuotaError && retries < maxRetries) {
+        // Gestión de saturación de cuota (429) con espera progresiva
+        if ((error.message?.includes('429') || error.message?.toLowerCase().includes('quota')) && retries < maxRetries) {
           retries++;
-          // Espera exponencial: 4s, 8s...
           await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, retries)));
           return execute();
         }

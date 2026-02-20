@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { GoogleGenAI } from '@google/genai';
 import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
 
 interface CarceMailViewProps { 
@@ -62,33 +61,46 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     if (!prompt.trim() || isSearching) return;
     setIsSearching(true); setError(null);
     try {
-      const apiKey = googleApi.getApiKey();
-      if (!apiKey) throw new Error("VITE_API_KEY no detectada.");
-      const ai = new GoogleGenAI({ apiKey });
-      const extraction = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Extract search query from: "${prompt}". Just the query.` });
+      // Paso 1: Extraer términos con IA (Usa safeAiCall que maneja la API KEY correctamente)
+      const extraction = await googleApi.safeAiCall({
+        prompt: `Extrae términos de búsqueda para Gmail de esta petición: "${prompt}". Devuelve solo los términos.`,
+        systemInstruction: "Eres un asistente de búsqueda. Devuelve únicamente el texto para el buscador de Gmail."
+      });
+
+      // Paso 2: Buscar en Gmail
       const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
       
       if (messages.length === 0) {
-        const noResults = { prompt, answer: "No se encontraron correos relevantes.", results: [] };
+        const noResults = { prompt, answer: "Pablo, no he encontrado correos relevantes para esa búsqueda.", results: [] };
         setHistory(prev => [noResults, ...prev]);
         setIsSearching(false);
         return;
       }
 
+      // Paso 3: Analizar contenidos
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
-      const snippets = detailed.map(m => `Subj: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Body: ${m.snippet}`).join('\n');
-      const answer = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Answer based on these emails:\n${snippets}\nUser asks: "${prompt}". BE FRIENDLY, USE PARAGRAPHS, REMOVE ASTERISKS.` });
+      const snippets = detailed.map(m => `Asunto: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Fragmento: ${m.snippet}`).join('\n');
+      
+      const answer = await googleApi.safeAiCall({
+        prompt: `Analiza estos correos y responde a Pablo: "${prompt}"\n\nCorreos:\n${snippets}`,
+        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva y profesional.",
+        usePro: true
+      });
       
       const newInteraction = { prompt, answer: answer.text, results: detailed };
       setHistory(prev => [newInteraction, ...prev]);
       setPrompt('');
 
-      // Sincronizar con el Spreadsheet Log
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), prompt, answer.text, JSON.stringify(detailed.slice(0, 3))], googleConfig.accessToken);
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), prompt, answer.text, ""], googleConfig.accessToken);
       }
 
-    } catch (err: any) { setError(err.message || "Error IA."); } finally { setIsSearching(false); }
+    } catch (err: any) { 
+      console.error("Gmail Analysis Error:", err);
+      setError("Error al procesar la solicitud. Por favor, revisa tu conexión."); 
+    } finally { 
+      setIsSearching(false); 
+    }
   };
 
   if (!config.isConnected) return (
@@ -102,7 +114,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in pb-32">
       <header className="flex justify-between items-end">
         <div className="space-y-2">
-          <p className="text-[#5E7BFF] text-xs font-bold uppercase tracking-widest">Consultor Inteligente</p>
+          <p className="text-[#5E7BFF] text-xs font-bold uppercase tracking-widest">Consultor de Emails</p>
           <h2 className="text-4xl font-semibold tracking-tight">CarceMail Inbox</h2>
         </div>
         <button onClick={() => setConfig({ isConnected: false, email: null, accessToken: null })} className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:text-red-400"><LogOut size={14} /> Desconectar</button>
@@ -110,7 +122,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
 
       <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-8 flex items-center gap-6 shadow-2xl">
         <Search className="text-[#646B7B]" />
-        <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Pregúntame sobre tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
+        <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Busca en tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
         <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">{isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}</button>
       </div>
 
@@ -125,7 +137,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
             
             <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10"><Sparkles size={100} className="text-[#5E7BFF]" /></div>
-              <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Resumen de CarceMail</h4></div>
+              <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Análisis de CarceMail</h4></div>
               <FormattedResponse text={interaction.answer} />
               
               {interaction.results.length > 0 && (
@@ -134,7 +146,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
                     <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2">
                       <h6 className="font-semibold text-sm truncate">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
                       <p className="text-[10px] text-[#646B7B] line-clamp-2 leading-relaxed">{msg.snippet}</p>
-                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1">Ver Correo <ExternalLink size={10} /></button>
+                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1">Ver en Gmail <ExternalLink size={10} /></button>
                     </div>
                   ))}
                 </div>

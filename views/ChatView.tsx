@@ -55,8 +55,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
   };
 
   const handleReset = () => {
-    if (window.confirm("¿Limpiar historial visual? Esto ayuda si el consultor se siente saturado.")) {
-      setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado, Pablo. Sigo conectado a tu archivo maestro CarceMind_Memory_Index.', timestamp: new Date() }]);
+    if (window.confirm("¿Limpiar historial de la conversación actual?")) {
+      setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado. Sigo conectado a tu archivo maestro CarceMind_Memory_Index, Pablo.', timestamp: new Date() }]);
     }
   };
 
@@ -70,36 +70,35 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      // FORMATO ULTRA-COMPRIMIDO para maximizar "consultar todo" sin romper TPM
-      // Enviamos 100 memorias y 200 transacciones
-      const memoryContext = memories.slice(0, 100).map(m => `[${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt.substring(0, 100)}`).join('|');
-      const bankContext = bankData.slice(-200).map(t => `${t.date}|${t.concept.substring(0, 30)}|${t.amount}€|${t.type}`).join('|');
+      // RESTAURACIÓN: Formato de lista detallada (50 memorias, 100 transacciones)
+      // Este formato es el que Gemini Pro interpreta con mayor precisión numérica.
+      const memoryContext = memories.slice(0, 50).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
+      const bankContext = bankData.slice(-100).map(t => `- ${t.date}: ${t.concept} | Importe: ${t.amount}€ | Cuenta: ${t.type}`).join('\n');
       
       const systemInstruction = `
-        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional e impecable.
+        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y de alta capacidad analítica.
         
-        SISTEMA DE DATOS (Maestro Unificado):
-        - TALENT ACADEMY (Empresa): Cuentas "TA_".
-        - PABLO CARCELÉN (Personal): Cuentas "Personal_".
+        SISTEMA DE DATOS (Archivo Maestro):
+        - TALENT ACADEMY (Empresa): Datos etiquetados como "TA".
+        - PABLO CARCELÉN (Personal): Datos etiquetados como "Personal".
         
-        FINANZAS (Comprimido: Fecha|Concepto|Importe|Cuenta):
+        MOVIMIENTOS BANCARIOS RECIENTES:
         ${bankContext}
         
-        MEMORIAS (Comprimido: Fecha|Título|Resumen):
+        MEMORIAS Y RECUERDOS RECIENTES:
         ${memoryContext}
         
-        INSTRUCCIONES CRÍTICAS:
-        1. Tu capacidad de análisis es TOTAL sobre los datos proporcionados.
-        2. Para dudas de compras (ej. Consum), busca en TODAS las líneas de finanzas.
-        3. Si Pablo pregunta por una cuenta específica, filtra solo esos datos.
-        4. Cruza con memorias para dar contexto emocional si procede.
-        5. Sé extremadamente preciso con las cifras.
+        REGLAS DE RESPUESTA:
+        1. Tu acceso es TOTAL a los datos arriba listados.
+        2. Analiza con precisión: si pregunta por un gasto (ej: Consum), busca en todas las cuentas bancarias proporcionadas.
+        3. Si no encuentras el dato, indícalo claramente.
+        4. Cruza memorias con finanzas si existe relación temporal o temática.
       `;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
         systemInstruction,
-        usePro: true // ACTIVADO GEMINI PRO para mayor capacidad de procesamiento
+        usePro: true // Modelo Pro para análisis complejo
       });
 
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
@@ -108,7 +107,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       saveToCloud(aiMsg);
     } catch (err: any) {
       console.error("Chat Error:", err);
-      const errorText = "Pablo, he tenido un problema de conexión con el Archivo Maestro. Esto suele pasar cuando el volumen de datos es muy alto o Google Sheets tarda en responder. Por favor, reintenta en un momento.";
+      const errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro. Por favor, reintenta en unos segundos.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -124,7 +123,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
           </div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Motor Gemini Pro v2.0 - Acceso Masivo</p>
+            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Acceso Maestro: Memoria e Inteligencia Financiera</p>
           </div>
         </div>
         <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">
@@ -157,7 +156,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
 
       <div className="mt-10 relative">
         <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Pablo, ¿qué analizamos hoy?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16 shadow-2xl" />
-        <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all"><Send size={20} /></button>
+        <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-xl"><Send size={20} /></button>
       </div>
     </div>
   );
