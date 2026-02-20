@@ -1,7 +1,7 @@
 
 import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
+import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle, Key } from 'lucide-react';
 import React, { useState } from 'react';
 
 interface CarceMailViewProps { 
@@ -57,16 +57,23 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     } catch (e) { setError("Fallo al conectar Gmail."); }
   };
 
+  const handleOpenKeySelector = async () => {
+    if ((window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      window.location.reload();
+    }
+  };
+
   const handleSearch = async () => {
     const currentPrompt = prompt.trim();
     if (!currentPrompt || isSearching) return;
     
     setIsSearching(true); 
     setError(null);
-    setPrompt(''); // Limpiamos la UI inmediatamente para dar sensación de velocidad
+    setPrompt(''); 
 
     try {
-      // 1. GUARDAR CONSULTA DEL USUARIO EN LOG INMEDIATAMENTE
+      // 1. LOG DE USUARIO (Guardar SIEMPRE)
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
         await googleApi.appendRow(
           googleConfig.spreadsheetId, 
@@ -76,7 +83,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
         );
       }
 
-      // 2. Extraer términos de búsqueda con Gemini
+      // 2. IA Gemini
       const extraction = await googleApi.safeAiCall({
         prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${currentPrompt}"`,
         systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave, sin explicaciones."
@@ -91,21 +98,20 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
         const noResultsText = "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.";
         setHistory(prev => [{ prompt: currentPrompt, answer: noResultsText, results: [] }, ...prev]);
         
-        // Log de respuesta vacía
         if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
           await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", noResultsText, searchTerms], googleConfig.accessToken);
         }
         return;
       }
 
-      // 4. Obtener detalles de correos
+      // 4. Detalles Gmail
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
       const snippets = detailed.map(m => {
         const subject = m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto';
         return `Asunto: ${subject} | Resumen: ${m.snippet}`;
       }).join('\n');
       
-      // 5. Generar respuesta final con Gemini
+      // 5. Análisis Final
       const response = await googleApi.safeAiCall({
         prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
         systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa. Si hay fechas o datos clave, destácalos.",
@@ -114,10 +120,10 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
       
       const answerText = response.text || "No he podido extraer una conclusión clara.";
       
-      // 6. Actualizar UI
+      // 6. UI e Historial
       setHistory(prev => [{ prompt: currentPrompt, answer: answerText, results: detailed }, ...prev]);
       
-      // 7. GUARDAR RESPUESTA DE LA IA EN LOG
+      // 7. LOG DE IA
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
         await googleApi.appendRow(
           googleConfig.spreadsheetId, 
@@ -131,7 +137,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
       console.error("Gmail Analysis Error:", err);
       let userMsg = "He tenido un problema al analizar tus correos.";
       if (err.message === "KEY_MISSING") {
-        userMsg = "Error: La API KEY de Gemini no está configurada correctamente en el entorno.";
+        userMsg = "API KEY_MISSING: Por favor, pulsa el botón 'Vincular API KEY' de abajo para activar Gemini.";
       }
       setError(userMsg); 
     } finally { 
@@ -172,11 +178,19 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
       </div>
 
       {error && (
-        <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex flex-col gap-2">
+        <div className="p-10 rounded-[2.5rem] bg-red-500/5 border border-red-500/20 text-red-400 space-y-6 animate-in zoom-in-95">
           <div className="flex items-center gap-4">
-            <AlertCircle size={20} /> <p className="text-sm font-bold uppercase tracking-widest">Atención</p>
+            <AlertCircle size={24} /> 
+            <div>
+               <p className="text-sm font-bold uppercase tracking-widest">Error de Activación</p>
+               <p className="text-xs opacity-80 leading-relaxed">{error}</p>
+            </div>
           </div>
-          <p className="text-xs pl-9 opacity-80">{error}</p>
+          {error.includes("KEY_MISSING") && (
+            <button onClick={handleOpenKeySelector} className="flex items-center gap-3 px-6 py-3 bg-red-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg">
+              <Key size={14} /> Vincular API KEY Ahora
+            </button>
+          )}
         </div>
       )}
 

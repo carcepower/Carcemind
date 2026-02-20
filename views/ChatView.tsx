@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { Send, Sparkles, User, BrainCircuit, Loader2, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Send, Sparkles, User, BrainCircuit, Loader2, Trash2, AlertCircle, Key } from 'lucide-react';
 
 interface ChatViewProps {
   memories: Memory[];
@@ -54,6 +54,13 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     }
   };
 
+  const handleOpenKeySelector = async () => {
+    if ((window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      window.location.reload();
+    }
+  };
+
   const handleReset = () => {
     if (window.confirm("¿Limpiar historial de la conversación actual?")) {
       setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado. Sigo conectado a tu archivo maestro CarceMind_Memory_Index, Pablo.', timestamp: new Date() }]);
@@ -70,47 +77,33 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      // Formato estructurado para Gemini Pro
-      const memoryContext = memories.slice(0, 50).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-100).map(t => `- Fecha: ${t.date} | Concepto: ${t.concept} | Importe: ${t.amount}€ | Cuenta: ${t.type}`).join('\n');
+      const memoryContext = memories.slice(0, 30).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
+      const bankContext = bankData.slice(-50).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
       
-      const systemInstruction = `
-        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.
-        
-        CONTEXTO MAESTRO:
-        - TALENT ACADEMY (Empresa): Datos marcados como "TA".
-        - PABLO CARCELÉN (Personal): Datos marcados como "Personal".
-        
-        DATOS FINANCIEROS (100 últimos):
-        ${bankContext}
-        
-        MEMORIAS (50 últimas):
-        ${memoryContext}
-        
-        MÉTODO:
-        1. Analiza con precisión matemática. 
-        2. Tono elegante y ejecutivo.
-        3. Si no hay datos, dilo con naturalidad pero sin inventar.
-      `;
+      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
-        systemInstruction,
+        systemInstruction: systemInstruction + `\n\nMEMORIAS:\n${memoryContext}\n\nFINANZAS:\n${bankContext}`,
         usePro: true 
       });
 
       const aiMsg: Message = { 
         id: (Date.now() + 1).toString(), 
         role: 'assistant', 
-        text: response.text || 'No he podido procesar esa consulta ahora mismo, Pablo.', 
+        text: response.text || 'No he podido procesar esa consulta.', 
         timestamp: new Date() 
       };
       setMessages(prev => [...prev, aiMsg]);
-      
       saveToCloud(aiMsg);
     } catch (err: any) {
       console.error("Chat Error:", err);
-      const errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro. Esto suele ocurrir si la red es inestable o la clave de API tarda en validar. Por favor, reintenta en unos segundos.";
+      let errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro.";
+      
+      if (err.message === "KEY_MISSING") {
+        errorText = "API KEY_MISSING: No puedo acceder a mi cerebro. Por favor, pulsa el botón de abajo para vincular una API Key válida.";
+      }
+
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -126,7 +119,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
           </div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Acceso Maestro: Memoria e Inteligencia Financiera</p>
+            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Acceso Maestro: Memoria e Inteligencia Financiera</p>
           </div>
         </div>
         <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">
@@ -140,8 +133,13 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${msg.role === 'user' ? 'bg-[#151823] border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/20 border-red-500/30' : 'bg-[#5E7BFF] border-[#5E7BFF] shadow-lg shadow-[#5E7BFF33]'}`}>
               {msg.role === 'user' ? <User size={18} /> : msg.id === 'err' ? <AlertCircle size={18} className="text-red-400" /> : <Sparkles size={18} />}
             </div>
-            <div className={`p-6 rounded-[2rem] max-w-[85%] ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/5 border border-red-500/10' : 'bg-white/5 border border-white/5'}`}>
+            <div className={`p-6 rounded-[2rem] max-w-[85%] flex flex-col gap-4 ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/5 border border-red-500/10' : 'bg-white/5 border border-white/5'}`}>
               {msg.role === 'assistant' ? <FormattedResponse text={msg.text} /> : <p className="text-sm leading-relaxed">{msg.text}</p>}
+              {msg.text.includes("KEY_MISSING") && (
+                <button onClick={handleOpenKeySelector} className="flex items-center gap-2 w-fit px-4 py-2 bg-red-500 text-white rounded-xl font-bold text-[9px] uppercase tracking-widest hover:scale-105 transition-all">
+                  <Key size={12} /> Vincular API KEY
+                </button>
+              )}
             </div>
           </div>
         ))}

@@ -5,7 +5,6 @@ import { GoogleGenAI } from '@google/genai';
 export const googleApi = {
   /**
    * Ejecuta una llamada a Gemini siguiendo estrictamente las guías del SDK.
-   * Se accede a process.env.API_KEY directamente en cada llamada.
    */
   async safeAiCall(params: { 
     prompt: string, 
@@ -14,14 +13,13 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    // Verificación de seguridad previa
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.error("CRÍTICO: process.env.API_KEY no detectada en el entorno.");
+    // La clave debe obtenerse exclusivamente de process.env.API_KEY
+    if (!process.env.API_KEY) {
+      console.error("CRÍTICO: process.env.API_KEY no detectada.");
       throw new Error("KEY_MISSING");
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     try {
       const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
@@ -48,8 +46,7 @@ export const googleApi = {
         contents: contents,
         config: {
           systemInstruction: params.systemInstruction,
-          temperature: 0.2,
-          ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
+          temperature: 0.1
         }
       });
       
@@ -80,18 +77,18 @@ export const googleApi = {
   },
 
   async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, token);
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title,sheets.properties.sheetId`, token);
     return await response.json();
   },
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
     try {
       console.log(`Intentando escribir en ${sheetName}:`, values);
-      await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
+      const res = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
         method: 'POST', 
         body: JSON.stringify({ values: [values] }) 
       });
-      console.log(`Éxito al escribir en ${sheetName}`);
+      if (res.ok) console.log(`Éxito al escribir en ${sheetName}`);
     } catch (e: any) {
       console.warn(`No se pudo escribir en "${sheetName}":`, e.message);
     }
