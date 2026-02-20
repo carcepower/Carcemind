@@ -55,8 +55,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
   };
 
   const handleReset = () => {
-    if (window.confirm("¿Quieres limpiar el historial de la conversación actual?")) {
-      setMessages([{ id: 'init', role: 'assistant', text: 'Historial de sesión reiniciado, Pablo. Mi conexión con el Archivo Maestro sigue activa. ¿Qué analizamos?', timestamp: new Date() }]);
+    if (window.confirm("¿Limpiar historial visual? Esto ayuda si el consultor se siente saturado.")) {
+      setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado, Pablo. Sigo conectado a tu archivo maestro CarceMind_Memory_Index.', timestamp: new Date() }]);
     }
   };
 
@@ -70,35 +70,36 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      // RESTAURACIÓN: Acceso a un bloque profundo de datos (50 memorias, 100 transacciones)
-      const memoryContext = memories.slice(0, 50).map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-100).map(t => `- ${t.date}: ${t.concept} (${t.amount}€) [Cuenta: ${t.type}]`).join('\n');
+      // FORMATO ULTRA-COMPRIMIDO para maximizar "consultar todo" sin romper TPM
+      // Enviamos 100 memorias y 200 transacciones
+      const memoryContext = memories.slice(0, 100).map(m => `[${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt.substring(0, 100)}`).join('|');
+      const bankContext = bankData.slice(-200).map(t => `${t.date}|${t.concept.substring(0, 30)}|${t.amount}€|${t.type}`).join('|');
       
       const systemInstruction = `
-        Eres el "Consultor Cognitivo" de Pablo Carcelén. 
-        Asistente personal e impecable. Tu tono es profesional, analítico y directo.
+        Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional e impecable.
         
-        SISTEMA DE DATOS UNIFICADO:
-        - Accedes a CarceMind_Memory_Index.
-        - Las cuentas "TA" son de empresa (Talent Academy).
-        - Las cuentas "Personal" son personales (Caixabank).
+        SISTEMA DE DATOS (Maestro Unificado):
+        - TALENT ACADEMY (Empresa): Cuentas "TA_".
+        - PABLO CARCELÉN (Personal): Cuentas "Personal_".
         
-        CONTEXTO BANCARIO COMPLETO:
+        FINANZAS (Comprimido: Fecha|Concepto|Importe|Cuenta):
         ${bankContext}
         
-        CONTEXTO DE MEMORIA PERSONAL:
+        MEMORIAS (Comprimido: Fecha|Título|Resumen):
         ${memoryContext}
         
-        INSTRUCCIONES:
-        1. Analiza TODA la información proporcionada para dar respuestas precisas.
-        2. Si Pablo pregunta por frecuencias de compra o sumas totales, calcula basándote en el contexto bancario.
-        3. Cruza memorias con finanzas si es relevante (ej: un viaje mencionado en memorias y sus gastos).
-        4. No inventes datos. Si algo no está en las 100 transacciones o 50 memorias, indícalo.
+        INSTRUCCIONES CRÍTICAS:
+        1. Tu capacidad de análisis es TOTAL sobre los datos proporcionados.
+        2. Para dudas de compras (ej. Consum), busca en TODAS las líneas de finanzas.
+        3. Si Pablo pregunta por una cuenta específica, filtra solo esos datos.
+        4. Cruza con memorias para dar contexto emocional si procede.
+        5. Sé extremadamente preciso con las cifras.
       `;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
-        systemInstruction
+        systemInstruction,
+        usePro: true // ACTIVADO GEMINI PRO para mayor capacidad de procesamiento
       });
 
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
@@ -106,7 +107,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       
       saveToCloud(aiMsg);
     } catch (err: any) {
-      const errorText = "Lo siento Pablo, he tenido un problema al consultar tu archivo maestro. Por favor, reintenta en unos instantes.";
+      console.error("Chat Error:", err);
+      const errorText = "Pablo, he tenido un problema de conexión con el Archivo Maestro. Esto suele pasar cuando el volumen de datos es muy alto o Google Sheets tarda en responder. Por favor, reintenta en un momento.";
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -122,15 +124,11 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
           </div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Acceso Total: Memoria + Finanzas Integradas</p>
+            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Motor Gemini Pro v2.0 - Acceso Masivo</p>
           </div>
         </div>
-        <button 
-          onClick={handleReset}
-          className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group"
-          title="Limpiar historial visual"
-        >
-          <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
+        <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">
+          <Trash2 size={18} className="group-hover:scale-110" />
         </button>
       </header>
 
@@ -158,21 +156,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       </div>
 
       <div className="mt-10 relative">
-        <input 
-          type="text" 
-          value={input} 
-          onChange={(e) => setInput(e.target.value)} 
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-          placeholder="Pablo, ¿en qué puedo ayudarte hoy?" 
-          className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16" 
-        />
-        <button 
-          onClick={handleSend} 
-          disabled={isTyping || !input.trim()} 
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-lg"
-        >
-          <Send size={20} />
-        </button>
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Pablo, ¿qué analizamos hoy?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16 shadow-2xl" />
+        <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all"><Send size={20} /></button>
       </div>
     </div>
   );

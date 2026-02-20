@@ -7,7 +7,7 @@ export const googleApi = {
     return process.env.API_KEY;
   },
 
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob }) {
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
@@ -17,10 +17,13 @@ export const googleApi = {
 
     const execute = async (): Promise<any> => {
       try {
+        // Usamos Pro para consultas complejas de historial, Flash para ingesta rápida de audio
+        const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+        
         const config: any = { 
-          model: 'gemini-3-flash-preview',
+          model: modelName,
           config: { 
-            temperature: 0.2, // Reducida para mayor precisión en datos numéricos/bancarios
+            temperature: 0.1, // Mínima temperatura para máxima precisión en datos bancarios
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
@@ -41,9 +44,11 @@ export const googleApi = {
         const result = await ai.models.generateContent({ ...config, contents });
         return result;
       } catch (error: any) {
-        if ((error.message?.includes('429') || error.message?.includes('quota')) && retries < maxRetries) {
+        const isQuotaError = error.message?.includes('429') || error.message?.includes('quota');
+        if (isQuotaError && retries < maxRetries) {
           retries++;
-          await new Promise(resolve => setTimeout(resolve, 3000 * Math.pow(2, retries)));
+          // Espera exponencial: 4s, 8s...
+          await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, retries)));
           return execute();
         }
         throw error;
