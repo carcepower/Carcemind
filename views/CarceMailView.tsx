@@ -66,56 +66,73 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     setPrompt(''); 
 
     try {
-      // 1. LOG DE USUARIO
+      // 1. LOG DE USUARIO (Silencioso para evitar errores de bloqueo)
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "USER", currentPrompt, ""], googleConfig.accessToken);
+        googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "USER", currentPrompt, ""], googleConfig.accessToken).catch(() => null);
       }
 
       // 2. Extraer términos de búsqueda optimizados
       const extraction = await googleApi.safeAiCall({
-        prompt: `Genera una consulta de búsqueda para Gmail (puedes usar operadores como from:, subject:, etc.) para: "${currentPrompt}"`,
-        systemInstruction: "Eres un experto en búsqueda de Gmail. Responde SOLO con los términos de búsqueda, sin texto adicional ni comillas."
+        prompt: `Genera una consulta de búsqueda para Gmail (ej: from:neuranews, subject:AI, etc.) para: "${currentPrompt}"`,
+        systemInstruction: "Eres un experto en búsqueda de Gmail. Responde ÚNICAMENTE con la cadena de búsqueda. No añadas explicaciones, ni comillas, ni código."
       });
 
-      const searchTerms = extraction.text?.trim().replace(/`/g, '') || currentPrompt;
+      // Limpiamos posibles respuestas verbosas de la IA
+      const searchTerms = extraction.text?.trim().split('\n')[0].replace(/["`]/g, '') || currentPrompt;
 
-      // 3. Buscar en Gmail (incrementado a 15 resultados)
+      // 3. Buscar en Gmail (15 resultados para dar contexto)
       const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 15);
       
       if (!messages || messages.length === 0) {
-        const noResultsText = `No he encontrado correos para la búsqueda: "${searchTerms}".`;
+        const noResultsText = `No he encontrado correos específicos para la búsqueda: "${searchTerms}". Por favor, Pablo, intenta ser más específico o verifica que el remitente es correcto.`;
         setHistory(prev => [{ prompt: currentPrompt, answer: noResultsText, results: [] }, ...prev]);
         return;
       }
 
-      // 4. Obtener detalles e INCLUIR REMITENTE
-      const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
+      // 4. Obtener detalles con gestión de fallos individuales
+      const detailedPromises = messages.map(async (m: any) => {
+        try {
+          return await googleApi.getGmailMessage(config.accessToken!, m.id);
+        } catch (e) {
+          console.warn(`No se pudo cargar el mensaje ${m.id}`, e);
+          return null;
+        }
+      });
+      
+      const allDetailed = await Promise.all(detailedPromises);
+      const detailed = allDetailed.filter(d => d !== null);
+
+      if (detailed.length === 0) {
+        setError("Se encontraron correos pero no se pudo acceder a su contenido. Verifica los permisos de la API.");
+        return;
+      }
+
       const snippets = detailed.map(m => {
         const subject = m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto';
         const from = m.payload.headers.find((h: any) => h.name === 'From')?.value || 'Remitente desconocido';
         return `DE: ${from} | ASUNTO: ${subject} | RESUMEN: ${m.snippet}`;
       }).join('\n\n');
       
-      // 5. Análisis Final con contexto completo
+      // 5. Análisis Final con Gemini Pro
       const response = await googleApi.safeAiCall({
-        prompt: `Basado en estos correos encontrados:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
-        systemInstruction: "Eres el analista de CarceMail. Tu objetivo es encontrar la información exacta que pide Pablo. Si pide correos de una fuente específica (como NeuraNews), identifícalos por el campo 'DE:'. Responde de forma clara y profesional.",
+        prompt: `Basado en estos ${detailed.length} correos encontrados:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
+        systemInstruction: "Eres el analista experto de CarceMail. Identifica a los remitentes por el campo 'DE:'. Responde con elegancia, precisión y profesionalidad. Si ves correos de NeuraNews, destaca los temas de IA que tratan.",
         usePro: true
       });
       
-      const answerText = response.text || "No he podido analizar los resultados correctamente.";
+      const answerText = response.text || "He localizado los correos pero he tenido un problema al generar el análisis detallado.";
       
-      // 6. UI e Historial
+      // 6. Actualizar UI
       setHistory(prev => [{ prompt: currentPrompt, answer: answerText, results: detailed }, ...prev]);
       
-      // 7. LOG DE IA
+      // 7. LOG DE IA (Silencioso)
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], googleConfig.accessToken);
+        googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], googleConfig.accessToken).catch(() => null);
       }
 
     } catch (err: any) { 
       console.error("Gmail Analysis Error:", err);
-      setError("Ha ocurrido un error al consultar tu bandeja de entrada."); 
+      setError(`Error técnico: ${err.message || "Fallo en la consulta de bandeja"}. Revisa la pestaña de Instrucciones para asegurar que la Gmail API esté activa.`); 
     } finally { 
       setIsSearching(false); 
     }
@@ -135,7 +152,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
           <p className="text-[#5E7BFF] text-xs font-bold uppercase tracking-widest">Consultor de Emails</p>
           <h2 className="text-4xl font-semibold tracking-tight">CarceMail Inbox</h2>
         </div>
-        <button onClick={() => setConfig({ isConnected: false, email: null, accessToken: null })} className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:text-red-400"><LogOut size={14} /> Desconectar</button>
+        <button onClick={() => setConfig({ isConnected: false, email: null, accessToken: null })} className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:text-red-400 transition-colors"><LogOut size={14} /> Desconectar</button>
       </header>
 
       <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-8 flex items-center gap-6 shadow-2xl">
@@ -156,7 +173,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
       {error && (
         <div className="p-10 rounded-[2.5rem] bg-red-500/5 border border-red-500/20 text-red-400 space-y-6 animate-in zoom-in-95">
           <div className="flex items-center gap-4">
-            <AlertCircle size={24} /> 
+            <AlertCircle size={24} className="shrink-0" /> 
             <div>
                <p className="text-sm font-bold uppercase tracking-widest">Atención</p>
                <p className="text-xs opacity-80 leading-relaxed">{error}</p>
@@ -179,7 +196,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
               
               {interaction.results.length > 0 && (
                 <div className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {interaction.results.slice(0, 4).map((msg, idx) => (
+                  {interaction.results.slice(0, 6).map((msg, idx) => (
                     <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2 group hover:border-[#5E7BFF]/30 transition-all">
                       <div className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest truncate">
                         {msg.payload.headers.find((h: any) => h.name === 'From')?.value.split('<')[0]}
