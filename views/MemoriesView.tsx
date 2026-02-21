@@ -95,3 +95,4 @@ const MemoriesView: React.FC<MemoriesViewProps> = ({ memories, onDeleteMemory })
 };
 
 export default MemoriesView;
+
