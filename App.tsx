@@ -50,6 +50,22 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Función para parsear fechas de forma segura (maneja DD/MM/YYYY y ISO)
+  const safeParseDate = (dateStr: any): Date => {
+    if (!dateStr) return new Date();
+    // Si ya es un objeto Date
+    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? new Date() : dateStr;
+    
+    // Si viene como string DD/MM/YYYY
+    if (typeof dateStr === 'string' && dateStr.includes('/')) {
+      const [d, m, y] = dateStr.split('/').map(Number);
+      if (d && m && y) return new Date(y, m - 1, d);
+    }
+    
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
   useEffect(() => {
     localStorage.setItem('carcemind_google_config', JSON.stringify(googleConfig));
   }, [googleConfig]);
@@ -70,13 +86,14 @@ const App: React.FC = () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       setSessionError(false);
-      setDiagnosticMsg(null);
       
       console.group("🔍 DIAGNÓSTICO CARCEMIND");
 
       const safeLoad = async (tabName: string) => {
         try {
-          return await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
+          const rows = await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
+          console.log(`📊 LECTURA: ${tabName} -> Filas encontradas: ${rows.length}`);
+          return rows;
         } catch (e: any) {
           if (e.message.includes("SESSION_EXPIRED")) throw e;
           console.warn(`Pestaña ${tabName} no accesible:`, e.message);
@@ -85,73 +102,62 @@ const App: React.FC = () => {
       };
 
       try {
-        const memRows = await safeLoad('ENTRADAS');
-        const taskRows = await safeLoad('TAREAS');
-        const taCorr = await safeLoad('TA_CORRIENTE');
-        const taAho = await safeLoad('TA_AHORRO');
-        const perCorr = await safeLoad('PERSONAL_CORRIENTE');
-        const perAho = await safeLoad('PERSONAL_AHORRO');
+        const [memRows, taskRows, taCorr, taAho, perCorr, perAho] = await Promise.all([
+          safeLoad('ENTRADAS'),
+          safeLoad('TAREAS'),
+          safeLoad('TA_CORRIENTE'),
+          safeLoad('TA_AHORRO'),
+          safeLoad('PERSONAL_CORRIENTE'),
+          safeLoad('PERSONAL_AHORRO')
+        ]);
 
         // Procesamiento Memorias
         if (memRows.length > 1) {
-          try {
-            const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-              id: r[0], 
-              timestamp: new Date(r[1]), 
-              title: r[2], 
-              excerpt: r[3], 
-              emotionalTag: r[4], 
-              tags: r[5] ? r[5].split(', ') : [], 
-              driveFileId: r[6], 
-              driveViewLink: r[7], 
-              snippets: r[8] ? r[8].split(' | ') : [], 
-              type: 'voice'
-            })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-            setMemories(loadedMemories);
-            console.log("✅ Memorias mapeadas:", loadedMemories.length);
-          } catch (err) {
-            console.error("Error mapeando ENTRADAS:", err);
-          }
+          const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+            id: String(r[0]), 
+            timestamp: safeParseDate(r[1]), 
+            title: r[2] || "Sin título", 
+            excerpt: r[3] || "", 
+            emotionalTag: r[4] || "", 
+            tags: r[5] ? r[5].split(', ') : [], 
+            driveFileId: r[6] || "", 
+            driveViewLink: r[7] || "", 
+            snippets: r[8] ? r[8].split(' | ') : [], 
+            type: 'voice'
+          })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+          setMemories(loadedMemories);
+          console.log("✅ Memorias mapeadas:", loadedMemories.length);
         }
 
         // Procesamiento Tareas
         if (taskRows.length > 1) {
-          try {
-            const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-              id: r[0], 
-              date: r[1], 
-              title: r[2] || "Tarea sin título", 
-              priority: (r[3] || 'medium').toLowerCase() as any, 
-              status: (r[4] || 'pendiente') as any, 
-              completed: r[4] === 'terminada', 
-              originId: r[5], 
-              deadline: r[6] ? new Date(r[6]) : new Date(), 
-              completedAt: r[7] ? new Date(r[7]) : null
-            }));
-            setTasks(loadedTasks);
-            console.log("✅ Tareas mapeadas:", loadedTasks.length);
-          } catch (err) {
-            console.error("Error mapeando TAREAS:", err);
-          }
+          const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+            id: String(r[0]), 
+            date: r[1], 
+            title: r[2] || "Tarea sin título", 
+            priority: (r[3] || 'medium').toLowerCase() as any, 
+            status: (r[4] || 'pendiente') as any, 
+            completed: r[4] === 'terminada', 
+            originId: r[5] || "", 
+            deadline: safeParseDate(r[6]), 
+            completedAt: r[7] ? safeParseDate(r[7]) : null
+          }));
+          setTasks(loadedTasks);
+          console.log("✅ Tareas mapeadas:", loadedTasks.length);
         }
 
         // Procesamiento Finanzas
-        try {
-          const combinedFinance = [
-            ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
-            ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
-            ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
-            ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
-          ].filter(t => t.date && t.concept);
-          setBankTrans(combinedFinance);
-          console.log("✅ Finanzas mapeadas:", combinedFinance.length);
-        } catch (err) {
-          console.error("Error mapeando FINANZAS:", err);
-        }
+        const combinedFinance = [
+          ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
+          ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
+          ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
+          ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
+        ].filter(t => t.date && t.concept);
+        setBankTrans(combinedFinance);
+        console.log("✅ Finanzas mapeadas:", combinedFinance.length);
 
       } catch (error: any) {
         if (error.message === "SESSION_EXPIRED") setSessionError(true);
-        setDiagnosticMsg(`Error de carga: ${error.message}`);
         console.error("Fallo crítico en loadData:", error);
       } finally {
         setIsInitialLoading(false);
@@ -206,18 +212,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-
-      {diagnosticMsg && (
-        <div className="fixed bottom-24 md:bottom-8 right-4 md:right-8 z-[150] w-80 animate-in slide-in-from-right-4">
-          <div className="bg-[#151823] border border-amber-500/50 p-4 rounded-2xl shadow-2xl space-y-2">
-            <div className="flex items-center gap-2 text-amber-500 font-bold text-[10px] uppercase tracking-widest">
-              <Info size={14} /> Sistema de Diagnóstico
-            </div>
-            <p className="text-[11px] text-[#A0A6B1] leading-relaxed">{diagnosticMsg}</p>
-            <p className="text-[9px] text-[#646B7B] italic">Mira la consola (F12) para detalles técnicos.</p>
-          </div>
-        </div>
-      )}
       
       <div className="md:hidden flex items-center justify-between p-6 glass border-b border-[#1F2330] z-[60] safe-area-top">
         <h1 className="text-xl font-bold tracking-tighter bg-gradient-to-r from-[#5E7BFF] to-[#8A6CFF] bg-clip-text text-transparent">CarceMind</h1>
@@ -226,12 +220,6 @@ const App: React.FC = () => {
       <Sidebar activeView={activeView} onViewChange={(v) => { setActiveView(v); setIsMobileMenuOpen(false); }} isMobileMenuOpen={isMobileMenuOpen} />
       <main className="flex-1 overflow-y-auto relative p-6 md:p-12 pb-32 md:pb-12">
         <div className="max-w-7xl mx-auto">
-          {isInitialLoading && (
-            <div className="fixed top-8 right-8 hidden md:flex items-center gap-3 bg-[#151823] border border-[#1F2330] px-4 py-2 rounded-full z-[100] animate-in fade-in shadow-2xl">
-              <RefreshCw className="w-4 h-4 animate-spin text-[#5E7BFF]" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#A0A6B1]">Sincronizando...</span>
-            </div>
-          )}
           {renderView()}
         </div>
       </main>

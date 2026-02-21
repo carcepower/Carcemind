@@ -3,6 +3,16 @@ import { GoogleConfig, Memory, Task } from '../types.ts';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
+  // Función auxiliar para limpiar respuestas de la IA que vengan con markdown ```json ... ```
+  cleanJsonResponse(text: string) {
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      return jsonMatch ? jsonMatch[0] : text;
+    } catch (e) {
+      return text;
+    }
+  },
+
   async safeAiCall(params: { 
     prompt: string, 
     systemInstruction?: string, 
@@ -11,12 +21,8 @@ export const googleApi = {
     usePro?: boolean 
   }) {
     console.group("🤖 GEMINI AI CALL");
-    console.log("Model:", params.usePro ? 'Pro' : 'Flash');
-    console.log("Prompt:", params.prompt);
-    
-    // Always use { apiKey: process.env.API_KEY }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+    const modelName = params.usePro ? 'gemini-3-pro-image-preview' : 'gemini-3-flash-preview';
     
     try {
       let contents: any;
@@ -45,8 +51,7 @@ export const googleApi = {
         }
       });
       
-      // Accessing text as a property, not a method.
-      console.log("Response:", response.text);
+      console.log("Response Raw:", response.text);
       console.groupEnd();
       return response;
     } catch (error: any) {
@@ -62,55 +67,31 @@ export const googleApi = {
     if (options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-    
     const response = await fetch(url, { ...options, headers });
-    
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`❌ API ERROR [${response.status}]`, url, errorData);
-      
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error?.message || `Error ${response.status}`);
     }
     return response;
   },
 
   async getRows(spreadsheetId: string, sheetName: string, token: string) {
-    console.group(`📊 LECTURA: ${sheetName}`);
     const range = encodeURIComponent(`'${sheetName}'!A:Z`);
-    try {
-      const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, token);
-      const data = await response.json();
-      console.log(`Filas encontradas: ${data.values?.length || 0}`);
-      console.groupEnd();
-      return data.values || [];
-    } catch (e) {
-      console.error(`Error leyendo ${sheetName}`);
-      console.groupEnd();
-      throw e;
-    }
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, token);
+    const data = await response.json();
+    return data.values || [];
   },
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    console.group(`📝 ESCRITURA: ${sheetName}`);
-    console.log("Datos:", values);
     const range = encodeURIComponent(`'${sheetName}'!A1`);
-    try {
-      await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, token, { 
-        method: 'POST', 
-        body: JSON.stringify({ values: [values] }) 
-      });
-      console.log("Guardado con éxito");
-      console.groupEnd();
-    } catch (e) {
-      console.error(`Error escribiendo en ${sheetName}`);
-      console.groupEnd();
-      throw e;
-    }
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ values: [values] }) 
+    });
   },
 
   async uploadFile(token: string, blob: Blob, fileName: string, folderId: string) {
-    console.log(`☁️ Subiendo archivo a Drive: ${fileName}`);
     const metadata = { name: fileName, parents: [folderId] };
     const formData = new FormData();
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -123,7 +104,7 @@ export const googleApi = {
   },
 
   async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, token);
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title,sheets.properties.sheetId`, token);
     return await response.json();
   },
 
@@ -137,7 +118,7 @@ export const googleApi = {
 
   async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
     const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
+    const rowIndex = rows.findIndex(row => String(row[0]) === String(id));
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
@@ -152,20 +133,16 @@ export const googleApi = {
     });
   },
 
-  // Fix: Adding the missing updateTaskDetail method to handle task title updates.
   async updateTaskDetail(spreadsheetId: string, id: string, title: string, token: string) {
     const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
+    const rowIndex = rows.findIndex(row => String(row[0]) === String(id));
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    // Task title is in Column C (index 2)
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
       method: 'POST', 
       body: JSON.stringify({ 
         valueInputOption: 'RAW', 
-        data: [
-          { range: `'TAREAS'!C${rowNum}`, values: [[title]] }
-        ] 
+        data: [{ range: `'TAREAS'!C${rowNum}`, values: [[title]] }] 
       }) 
     });
   },
@@ -184,9 +161,9 @@ export const googleApi = {
 
   async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
     const rows = await this.getRows(spreadsheetId, sheetName, token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
+    const rowIndex = rows.findIndex(row => String(row[0]) === String(id));
     if (rowIndex === -1) return;
-    const ssMetadata = await (await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token)).json();
+    const ssMetadata = await this.getSpreadsheetMetadata(spreadsheetId, token);
     const sheetId = ssMetadata.sheets.find((s: any) => s.properties.title === sheetName).properties.sheetId;
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, { 
       method: 'POST', 

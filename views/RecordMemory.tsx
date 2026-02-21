@@ -80,11 +80,13 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         audioBlob: blob
       });
 
-      const data = JSON.parse(result.text);
+      // Limpiamos el JSON por si Gemini añade Markdown
+      const cleanJson = googleApi.cleanJsonResponse(result.text || "{}");
+      const data = JSON.parse(cleanJson);
+      
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
-      // ENTRADAS: ID(0), Fecha(1), Título(2), Resumen(3), Emocion(4), Tags(5), DriveID(6), Link(7), Snippets(8)
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
         entryId, 
         new Date().toISOString(), 
@@ -102,7 +104,6 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
           const deadlineDate = new Date();
           deadlineDate.setDate(deadlineDate.getDate() + (task.daysToDeadline || 1));
           
-          // TAREAS: ID(0), Fecha(1), Título(2), Prioridad(3), Estado(4), Origen(5), Límite(6)
           await googleApi.appendRow(googleConfig.spreadsheetId!, 'TAREAS', [
             crypto.randomUUID(),
             new Date().toISOString(),
