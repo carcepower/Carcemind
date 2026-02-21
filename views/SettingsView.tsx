@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { 
-  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Key, Sparkles, ExternalLink
+  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Sparkles
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -18,7 +18,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
-  const [isKeyLinked, setIsKeyLinked] = useState(false);
   
   const [indexStatus, setIndexStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
   const [financeStatus, setFinanceStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'not_found' | 'idle'>('idle');
@@ -27,35 +26,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
-    checkKeyStatus();
-  }, []);
-
-  const checkKeyStatus = async () => {
-    if ((window as any).aistudio?.hasSelectedApiKey) {
-      const linked = await (window as any).aistudio.hasSelectedApiKey();
-      setIsKeyLinked(linked);
-    }
-  };
-
-  useEffect(() => {
     if (config.isConnected && config.accessToken) loadFolders();
   }, [config.isConnected, config.accessToken]);
 
   useEffect(() => {
     if (config.isConnected && config.accessToken && config.sheetFolderId) checkForIndexIntegrity();
   }, [config.sheetFolderId, config.accessToken]);
-
-  const handleOpenKeySelector = async () => {
-    try {
-      if ((window as any).aistudio) {
-        await (window as any).aistudio.openSelectKey();
-        // Asumimos éxito según guías para proceder sin bloqueos
-        setIsKeyLinked(true);
-      }
-    } catch (e) {
-      setError("No se pudo abrir el selector de llaves.");
-    }
-  };
 
   const checkForIndexIntegrity = async () => {
     if (!config.accessToken || !config.sheetFolderId) return;
@@ -162,31 +138,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
           <span className="text-[10px] font-bold uppercase tracking-widest tracking-tighter">Diagnóstico</span>
         </button>
       </header>
-
-      {/* API KEY SECTION */}
-      <section className="p-10 rounded-[3rem] bg-gradient-to-br from-[#1A1E2E] to-[#0B0D12] border border-[#5E7BFF]/30 space-y-6 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-5"><Key size={120} className="text-[#5E7BFF]" /></div>
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-colors ${isKeyLinked ? 'bg-[#10B981] shadow-[#10B98144]' : 'bg-[#5E7BFF] shadow-[#5E7BFF44]'}`}>
-              {isKeyLinked ? <CheckCircle2 className="text-white" size={28} /> : <Key className="text-white" size={28} />}
-            </div>
-            <div>
-              <h3 className="text-xl font-bold">{isKeyLinked ? 'Llave Inteligente Activa' : 'Vincular Cerebro Gemini'}</h3>
-              <p className="text-[#A0A6B1] text-xs">Se requiere un proyecto de Google Cloud con facturación.</p>
-            </div>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            <button onClick={handleOpenKeySelector} className={`px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all shadow-xl ${isKeyLinked ? 'bg-white/10 text-white border border-white/20' : 'bg-[#5E7BFF] text-white hover:scale-105'}`}>
-              {isKeyLinked ? 'Cambiar API KEY' : 'Vincular Ahora'}
-            </button>
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[9px] text-[#5E7BFF] font-bold uppercase tracking-widest flex items-center gap-1 mx-auto hover:underline">
-              Docs Facturación <ExternalLink size={10} />
-            </a>
-          </div>
-        </div>
-      </section>
 
       <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-8">
         <div className="flex flex-col md:flex-row justify-between items-start gap-8">

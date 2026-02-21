@@ -20,20 +20,18 @@ const TestView: React.FC = () => {
 
     try {
       const startTime = Date.now();
-      // Corrected: using safeAiCall from googleApi which is now implemented
       const result = await googleApi.safeAiCall({
         prompt: prompt,
         systemInstruction: "Eres un sistema de diagnóstico para CarceMind. Responde de forma técnica y breve."
       });
       
       const duration = Date.now() - startTime;
-      // Corrected: using .text property
       setResponse(`[${duration}ms] Gemini responde: ${result.text}`);
       setStatus('success');
     } catch (err: any) {
       console.error("Test Error:", err);
       setStatus('error');
-      setErrorDetails(err.message === "API_KEY_MISSING" ? "Falta la clave de Google AI en el entorno." : err.message || "Error desconocido.");
+      setErrorDetails(err.message === "API_KEY_MISSING" ? "La API KEY de Gemini no está configurada en el entorno." : err.message || "Error desconocido.");
     } finally {
       setIsLoading(false);
     }
@@ -47,7 +45,7 @@ const TestView: React.FC = () => {
         </div>
         <h2 className="text-5xl font-semibold tracking-tight">Prueba de Conectividad</h2>
         <p className="text-[#646B7B] max-w-xl mx-auto italic">
-          Verifica que la API KEY de Gemini está configurada correctamente en el entorno.
+          Verifica que la API de Gemini está respondiendo correctamente.
         </p>
       </header>
 
@@ -81,7 +79,7 @@ const TestView: React.FC = () => {
           <div className="p-8 rounded-[2rem] bg-[#10B981]/10 border border-[#10B981]/20 space-y-4 animate-in slide-in-from-bottom-2">
             <div className="flex items-center gap-3 text-[#10B981]">
               <CheckCircle2 size={20} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Conexión Exitosa</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">IA en Línea</span>
             </div>
             <p className="text-sm font-medium leading-relaxed italic">
               {response}
@@ -93,14 +91,11 @@ const TestView: React.FC = () => {
           <div className="p-8 rounded-[2rem] bg-red-500/10 border border-red-500/20 space-y-4 animate-in slide-in-from-bottom-2">
             <div className="flex items-center gap-3 text-red-400">
               <AlertCircle size={20} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Fallo en la API KEY</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">Fallo de Comunicación</span>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-mono bg-black/30 p-4 rounded-xl text-red-300 overflow-x-auto">
                 {errorDetails}
-              </p>
-              <p className="text-[11px] text-[#646B7B] leading-relaxed">
-                Si ves "API_KEY_MISSING", asegúrate de que has pulsado el botón de <b>Gestionar Clave de Google AI</b> en la pestaña Ajustes.
               </p>
             </div>
           </div>
