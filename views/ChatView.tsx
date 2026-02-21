@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
@@ -64,7 +63,10 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
 
     try {
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
-      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. Contexto: ${memoryContext}`;
+      
+      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. 
+      CONTEXTO DE MEMORIAS:
+      ${memoryContext}`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,

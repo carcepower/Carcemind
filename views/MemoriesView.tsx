@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Memory } from '../types';
 import { Mic, FileText, Tag, Calendar, Trash2, AlertTriangle } from 'lucide-react';

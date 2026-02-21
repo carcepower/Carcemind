@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig, TaskStatus } from './types';
 import Sidebar from './components/Sidebar';

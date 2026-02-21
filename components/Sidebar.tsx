@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewType } from '../types';
 import { 
@@ -34,8 +33,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
   const mobileBottomItems = [
     { id: ViewType.DASHBOARD, icon: LayoutDashboard },
     { id: ViewType.RECORD, icon: Mic },
+    { id: ViewType.CHAT, icon: MessageSquare },
     { id: ViewType.MAIL, icon: Mail },
-    { id: ViewType.TASKS, icon: CheckSquare },
     { id: ViewType.SETTINGS, icon: Settings },
   ];
 
@@ -77,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
 
         <div className="p-6 border-t border-[#1F2330] mt-auto shrink-0 md:block hidden">
           <div className="flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-[#646B7B] uppercase tracking-widest">
-            Cognición v1.6
+            Cognición v1.6.1
           </div>
         </div>
       </aside>

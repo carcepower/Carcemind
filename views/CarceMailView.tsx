@@ -1,11 +1,16 @@
-
 import React, { useState } from 'react';
-import { GmailConfig } from '../types';
+import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { GoogleGenAI } from '@google/genai';
 import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
 
-interface CarceMailViewProps { config: GmailConfig; setConfig: React.Dispatch<React.SetStateAction<GmailConfig>>; }
+interface CarceMailViewProps { 
+  config: GmailConfig; 
+  setConfig: React.Dispatch<React.SetStateAction<GmailConfig>>; 
+  history: { prompt: string, answer: string, results: any[] }[];
+  setHistory: React.Dispatch<React.SetStateAction<{ prompt: string, answer: string, results: any[] }[]>>;
+  googleConfig: GoogleConfig;
+}
 
 const CLIENT_ID = "660418616677-8rbbg21t1ksej5vuso1ou9r7sue8ma3a.apps.googleusercontent.com"; 
 
@@ -32,7 +37,7 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
+const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, history, setHistory, googleConfig }) => {
   const [prompt, setPrompt] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<any[]>([]);
@@ -58,17 +63,50 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
     if (!prompt.trim() || isSearching) return;
     setIsSearching(true); setError(null); setAiAnswer(null); setResults([]);
     try {
-      const apiKey = googleApi.getApiKey();
-      if (!apiKey) throw new Error("VITE_API_KEY no detectada.");
-      const ai = new GoogleGenAI({ apiKey });
+      // Guidelines: Access process.env.API_KEY directly.
+      if (!process.env.API_KEY) throw new Error("API_KEY_MISSING");
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
       const extraction = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Extract search query from: "${prompt}". Just the query.` });
       const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
-      if (messages.length === 0) { setAiAnswer("No se encontraron correos relevantes."); return; }
+      
+      if (messages.length === 0) { 
+        setAiAnswer("No se encontraron correos relevantes."); 
+        setIsSearching(false);
+        return; 
+      }
+
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
       const snippets = detailed.map(m => `Subj: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Body: ${m.snippet}`).join('\n');
-      const answer = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Answer based on these emails:\n${snippets}\nUser asks: "${prompt}". BE FRIENDLY, USE PARAGRAPHS, REMOVE ASTERISKS.` });
-      setAiAnswer(answer.text); setResults(detailed);
-    } catch (err: any) { setError(err.message || "Error IA."); } finally { setIsSearching(false); }
+      
+      const answerResponse = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Answer based on these emails:\n${snippets}\nUser asks: "${prompt}". BE FRIENDLY, USE PARAGRAPHS, REMOVE ASTERISKS.` });
+      const answerText = answerResponse.text;
+      
+      setAiAnswer(answerText); 
+      setResults(detailed);
+      
+      // Update local history
+      const newEntry = { prompt, answer: answerText, results: detailed };
+      setHistory(prev => [newEntry, ...prev.slice(0, 9)]);
+
+      // Save to Cloud MAIL_LOG if possible
+      if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
+        try {
+          await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [
+            Date.now().toString(),
+            new Date().toISOString(),
+            prompt,
+            answerText,
+            JSON.stringify(detailed.map(m => ({ id: m.id, snippet: m.snippet })))
+          ], googleConfig.accessToken);
+        } catch (e) { console.error("Cloud Mail Log Error:", e); }
+      }
+
+    } catch (err: any) { 
+      setError(err.message || "Error IA."); 
+    } finally { 
+      setIsSearching(false); 
+    }
   };
 
   if (!config.isConnected) return (
@@ -92,22 +130,40 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig }) => {
         <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Pregúntame sobre tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
         <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">{isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}</button>
       </div>
+      
       {aiAnswer && (
-        <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden">
+        <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
           <div className="absolute top-0 right-0 p-8 opacity-10"><Sparkles size={100} className="text-[#5E7BFF]" /></div>
           <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Resumen Inteligente</h4></div>
           <FormattedResponse text={aiAnswer} />
         </div>
       )}
+
       {error && <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex items-center gap-4"><AlertCircle size={20} /> <p className="text-sm">{error}</p></div>}
+      
       <div className="space-y-4">
-        {results.map((msg, idx) => (
-          <div key={idx} className="glass border border-[#1F2330] p-8 rounded-[2rem] space-y-4 hover:border-[#5E7BFF]/30 transition-all group">
-            <h6 className="font-semibold text-lg">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
-            <p className="text-sm text-[#A0A6B1] italic leading-relaxed">"{msg.snippet}"</p>
-            <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[10px] font-bold text-[#646B7B] uppercase tracking-widest flex items-center gap-2 group-hover:text-white transition-colors">Abrir en Gmail <ExternalLink size={12} /></button>
+        {results.length > 0 ? (
+          <div className="space-y-4">
+            <p className="text-[10px] font-bold text-[#646B7B] uppercase tracking-widest ml-4">Resultados de la búsqueda</p>
+            {results.map((msg, idx) => (
+              <div key={idx} className="glass border border-[#1F2330] p-8 rounded-[2rem] space-y-4 hover:border-[#5E7BFF]/30 transition-all group">
+                <h6 className="font-semibold text-lg">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
+                <p className="text-sm text-[#A0A6B1] italic leading-relaxed">"{msg.snippet}"</p>
+                <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[10px] font-bold text-[#646B7B] uppercase tracking-widest flex items-center gap-2 group-hover:text-white transition-colors">Abrir en Gmail <ExternalLink size={12} /></button>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : history.length > 0 && !aiAnswer && (
+          <div className="space-y-4">
+            <p className="text-[10px] font-bold text-[#646B7B] uppercase tracking-widest ml-4">Consultas Recientes</p>
+            {history.map((item, idx) => (
+              <div key={idx} className="glass border border-[#1F2330] p-8 rounded-[2rem] space-y-4 opacity-70 hover:opacity-100 transition-opacity">
+                <p className="text-xs font-bold text-[#5E7BFF]">{item.prompt}</p>
+                <p className="text-sm text-[#A0A6B1] line-clamp-2">{item.answer}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
