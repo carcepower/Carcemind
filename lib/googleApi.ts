@@ -20,9 +20,16 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    console.group("🤖 GEMINI AI CALL");
+    console.group("🤖 LLAMADA A GEMINI AI");
+    
+    // IMPORTANTE: Los modelos para texto/audio son 'preview', no 'image-preview'
+    const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+    
+    console.log("🚀 Modelo:", modelName);
+    console.log("📝 Prompt:", params.prompt.substring(0, 100) + "...");
+
+    // Inicialización según las guías: siempre usar { apiKey: process.env.API_KEY }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    const modelName = params.usePro ? 'gemini-3-pro-image-preview' : 'gemini-3-flash-preview';
     
     try {
       let contents: any;
@@ -51,11 +58,12 @@ export const googleApi = {
         }
       });
       
-      console.log("Response Raw:", response.text);
+      const text = response.text;
+      console.log("✅ Respuesta recibida:", text?.substring(0, 50) + "...");
       console.groupEnd();
       return response;
     } catch (error: any) {
-      console.error("AI Error:", error.message);
+      console.error("❌ Error en Gemini API:", error.message);
       console.groupEnd();
       throw error;
     }
