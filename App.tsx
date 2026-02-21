@@ -65,6 +65,14 @@ const App: React.FC = () => {
     localStorage.setItem('carcemind_mail_history', JSON.stringify(mailHistory));
   }, [mailHistory]);
 
+  // Función para parsear fechas formato DD/MM/YYYY a objeto Date
+  const parseSheetDate = (dateStr: string): Date => {
+    if (!dateStr || typeof dateStr !== 'string') return new Date(0);
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) return new Date(0);
+    return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+  };
+
   const loadData = async () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
@@ -93,12 +101,16 @@ const App: React.FC = () => {
           setTasks(loadedTasks);
         }
 
+        // Mapeo detallado y ordenación cronológica global para que el Consultor no se pierda datos intermedios
         const combinedFinance = [
-          ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
-          ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
+          ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'Empresa_TA_Corriente' })),
+          ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'Empresa_TA_Ahorro' })),
           ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
           ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
-        ].filter(t => t.date);
+        ]
+        .filter(t => t.date)
+        .sort((a, b) => parseSheetDate(b.date).getTime() - parseSheetDate(a.date).getTime());
+        
         setBankTrans(combinedFinance);
 
       } catch (error: any) {
@@ -185,4 +197,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

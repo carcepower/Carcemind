@@ -70,14 +70,26 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
+      // Contexto de memorias (30 últimas)
       const memoryContext = memories.slice(0, 30).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-50).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
       
-      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.`;
+      // Contexto de finanzas aumentado a 200 para no perder datos de meses anteriores
+      // bankData ya viene ordenado cronológicamente desde App.tsx
+      const bankContext = bankData.slice(0, 200).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
+      
+      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.
+      Tienes acceso a su historial de memorias y a sus movimientos bancarios.
+      
+      INSTRUCCIONES CRÍTICAS:
+      1. Las fechas bancarias están en formato DD/MM/YYYY.
+      2. Tienes datos de múltiples cuentas (Empresa TA, Personal Caixa).
+      3. Si Pablo pregunta por un mes específico (ej: Noviembre), analiza TODAS las líneas que coincidan con ese mes en el listado.
+      4. Si no encuentras algo, no digas que los datos "saltan", simplemente di que con la información actual no visualizas esos registros o sugiere que revise la sincronización.
+      5. Responde de forma ejecutiva.`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
-        systemInstruction: systemInstruction + `\n\nMEMORIAS:\n${memoryContext}\n\nFINANZAS:\n${bankContext}`,
+        systemInstruction: systemInstruction + `\n\nMEMORIAS RECIENTES:\n${memoryContext}\n\nMOVIMIENTOS BANCARIOS (200 MÁS RECIENTES):\n${bankContext}`,
         usePro: true 
       });
 
@@ -92,11 +104,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     } catch (err: any) {
       console.error("Chat Error:", err);
       let errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro.";
-      
-      if (err.message === "KEY_MISSING" || err.message === "KEY_INVALID_OR_MISSING") {
-        errorText = "Error de conexión con Gemini. Por favor, verifica el estado de la API en el panel de control.";
-      }
-
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
