@@ -1,5 +1,5 @@
 
-import { GoogleConfig, Memory, Task } from '../types';
+import { GoogleConfig, Memory, Task } from '../types.ts';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
@@ -10,6 +10,11 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
+    console.group("🤖 GEMINI AI CALL");
+    console.log("Model:", params.usePro ? 'Pro' : 'Flash');
+    console.log("Prompt:", params.prompt);
+    
+    // Always use { apiKey: process.env.API_KEY }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
     
@@ -40,9 +45,13 @@ export const googleApi = {
         }
       });
       
+      // Accessing text as a property, not a method.
+      console.log("Response:", response.text);
+      console.groupEnd();
       return response;
     } catch (error: any) {
-      console.error("Error en comunicación con Gemini:", error.message);
+      console.error("AI Error:", error.message);
+      console.groupEnd();
       throw error;
     }
   },
@@ -53,18 +62,64 @@ export const googleApi = {
     if (options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
+    
     const response = await fetch(url, { ...options, headers });
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const message = errorData.error?.message || `Error ${response.status}`;
+      console.error(`❌ API ERROR [${response.status}]`, url, errorData);
       
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      if (response.status === 400) throw new Error(`CONFIG_ERROR: ${message}`);
-      
-      throw new Error(message);
+      throw new Error(errorData.error?.message || `Error ${response.status}`);
     }
     return response;
+  },
+
+  async getRows(spreadsheetId: string, sheetName: string, token: string) {
+    console.group(`📊 LECTURA: ${sheetName}`);
+    const range = encodeURIComponent(`'${sheetName}'!A:Z`);
+    try {
+      const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, token);
+      const data = await response.json();
+      console.log(`Filas encontradas: ${data.values?.length || 0}`);
+      console.groupEnd();
+      return data.values || [];
+    } catch (e) {
+      console.error(`Error leyendo ${sheetName}`);
+      console.groupEnd();
+      throw e;
+    }
+  },
+
+  async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
+    console.group(`📝 ESCRITURA: ${sheetName}`);
+    console.log("Datos:", values);
+    const range = encodeURIComponent(`'${sheetName}'!A1`);
+    try {
+      await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, token, { 
+        method: 'POST', 
+        body: JSON.stringify({ values: [values] }) 
+      });
+      console.log("Guardado con éxito");
+      console.groupEnd();
+    } catch (e) {
+      console.error(`Error escribiendo en ${sheetName}`);
+      console.groupEnd();
+      throw e;
+    }
+  },
+
+  async uploadFile(token: string, blob: Blob, fileName: string, folderId: string) {
+    console.log(`☁️ Subiendo archivo a Drive: ${fileName}`);
+    const metadata = { name: fileName, parents: [folderId] };
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    formData.append('file', blob);
+    const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { 
+      method: 'POST', 
+      body: formData 
+    });
+    return await response.json();
   },
 
   async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
@@ -73,29 +128,11 @@ export const googleApi = {
   },
 
   async createSheetTabs(spreadsheetId: string, titles: string[], token: string) {
-    const requests = titles.map(title => ({
-      addSheet: { properties: { title } }
-    }));
+    const requests = titles.map(title => ({ addSheet: { properties: { title } } }));
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, {
-      method: 'POST',
+      method: 'POST', 
       body: JSON.stringify({ requests })
     });
-  },
-
-  async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    // Rango escapado para evitar errores 400 si la pestaña no existe o tiene caracteres especiales
-    const range = encodeURIComponent(`'${sheetName}'!A1`);
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, token, { 
-      method: 'POST', 
-      body: JSON.stringify({ values: [values] }) 
-    });
-  },
-
-  async getRows(spreadsheetId: string, sheetName: string, token: string) {
-    const range = encodeURIComponent(`'${sheetName}'!A:Z`);
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, token);
-    const data = await response.json();
-    return data.values || [];
   },
 
   async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
@@ -103,7 +140,6 @@ export const googleApi = {
     const rowIndex = rows.findIndex(row => row[0] === id);
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    // TAREAS: ID(A), FECHA_C(B), TITULO(C), PRIORIDAD(D), ESTADO(E), ORIGEN(F), LIMITE(G), CIERRE(H)
     await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
       method: 'POST', 
       body: JSON.stringify({ 
@@ -116,16 +152,21 @@ export const googleApi = {
     });
   },
 
-  async updateTaskDetail(spreadsheetId: string, id: string, newTitle: string, token: string) {
+  // Fix: Adding the missing updateTaskDetail method to handle task title updates.
+  async updateTaskDetail(spreadsheetId: string, id: string, title: string, token: string) {
     const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
     const rowIndex = rows.findIndex(row => row[0] === id);
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    // Columna C (3) es la descripción/título
-    const range = encodeURIComponent(`'TAREAS'!C${rowNum}`);
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=RAW`, token, { 
-      method: 'PUT', 
-      body: JSON.stringify({ values: [[newTitle]] }) 
+    // Task title is in Column C (index 2)
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        valueInputOption: 'RAW', 
+        data: [
+          { range: `'TAREAS'!C${rowNum}`, values: [[title]] }
+        ] 
+      }) 
     });
   },
 
@@ -133,18 +174,6 @@ export const googleApi = {
     const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`)}&fields=files(id, name)`, token);
     const data = await response.json();
     return data.files?.[0] || null;
-  },
-
-  async uploadFile(token: string, blob: Blob, fileName: string, folderId: string) {
-    const metadata = { name: fileName, parents: [folderId] };
-    const formData = new FormData();
-    formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    formData.append('file', blob);
-    const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { 
-      method: 'POST', 
-      body: formData 
-    });
-    return await response.json();
   },
 
   async listFolders(token: string) {

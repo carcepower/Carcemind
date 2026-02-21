@@ -13,13 +13,14 @@ import InstructionsView from './views/InstructionsView.tsx';
 import CarceMailView from './views/CarceMailView.tsx';
 import BankView from './views/BankView.tsx';
 import { googleApi } from './lib/googleApi.ts';
-import { Menu, X, RefreshCw, AlertCircle } from 'lucide-react';
+import { Menu, X, RefreshCw, AlertCircle, Info } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>(ViewType.DASHBOARD);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [sessionError, setSessionError] = useState(false);
+  const [diagnosticMsg, setDiagnosticMsg] = useState<string | null>(null);
   
   const [googleConfig, setGoogleConfig] = useState<GoogleConfig>(() => {
     const saved = localStorage.getItem('carcemind_google_config');
@@ -69,13 +70,16 @@ const App: React.FC = () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       setSessionError(false);
+      setDiagnosticMsg(null);
       
+      console.group("🔍 DIAGNÓSTICO CARCEMIND");
+
       const safeLoad = async (tabName: string) => {
         try {
           return await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
         } catch (e: any) {
           if (e.message.includes("SESSION_EXPIRED")) throw e;
-          console.warn(`Error cargando pestaña ${tabName}:`, e.message);
+          console.warn(`Pestaña ${tabName} no accesible:`, e.message);
           return [];
         }
       };
@@ -88,51 +92,70 @@ const App: React.FC = () => {
         const perCorr = await safeLoad('PERSONAL_CORRIENTE');
         const perAho = await safeLoad('PERSONAL_AHORRO');
 
+        // Procesamiento Memorias
         if (memRows.length > 1) {
-          const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], 
-            timestamp: new Date(r[1]), 
-            title: r[2], 
-            excerpt: r[3], 
-            emotionalTag: r[4], 
-            tags: r[5] ? r[5].split(', ') : [], 
-            driveFileId: r[6], 
-            driveViewLink: r[7], 
-            snippets: r[8] ? r[8].split(' | ') : [], 
-            type: 'voice'
-          })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-          setMemories(loadedMemories);
+          try {
+            const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+              id: r[0], 
+              timestamp: new Date(r[1]), 
+              title: r[2], 
+              excerpt: r[3], 
+              emotionalTag: r[4], 
+              tags: r[5] ? r[5].split(', ') : [], 
+              driveFileId: r[6], 
+              driveViewLink: r[7], 
+              snippets: r[8] ? r[8].split(' | ') : [], 
+              type: 'voice'
+            })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+            setMemories(loadedMemories);
+            console.log("✅ Memorias mapeadas:", loadedMemories.length);
+          } catch (err) {
+            console.error("Error mapeando ENTRADAS:", err);
+          }
         }
 
+        // Procesamiento Tareas
         if (taskRows.length > 1) {
-          const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], 
-            date: r[1], 
-            title: r[2] || "Tarea sin título", 
-            priority: (r[3] || 'medium').toLowerCase() as any, 
-            status: (r[4] || 'pendiente') as any, 
-            completed: r[4] === 'terminada', 
-            originId: r[5], 
-            deadline: r[6] ? new Date(r[6]) : new Date(), 
-            completedAt: r[7] ? new Date(r[7]) : null
-          }));
-          setTasks(loadedTasks);
+          try {
+            const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
+              id: r[0], 
+              date: r[1], 
+              title: r[2] || "Tarea sin título", 
+              priority: (r[3] || 'medium').toLowerCase() as any, 
+              status: (r[4] || 'pendiente') as any, 
+              completed: r[4] === 'terminada', 
+              originId: r[5], 
+              deadline: r[6] ? new Date(r[6]) : new Date(), 
+              completedAt: r[7] ? new Date(r[7]) : null
+            }));
+            setTasks(loadedTasks);
+            console.log("✅ Tareas mapeadas:", loadedTasks.length);
+          } catch (err) {
+            console.error("Error mapeando TAREAS:", err);
+          }
         }
 
-        const combinedFinance = [
-          ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
-          ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
-          ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
-          ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
-        ].filter(t => t.date && t.concept);
-        
-        setBankTrans(combinedFinance);
+        // Procesamiento Finanzas
+        try {
+          const combinedFinance = [
+            ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
+            ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
+            ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
+            ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
+          ].filter(t => t.date && t.concept);
+          setBankTrans(combinedFinance);
+          console.log("✅ Finanzas mapeadas:", combinedFinance.length);
+        } catch (err) {
+          console.error("Error mapeando FINANZAS:", err);
+        }
 
       } catch (error: any) {
         if (error.message === "SESSION_EXPIRED") setSessionError(true);
-        console.error("Error crítico en carga de datos:", error);
+        setDiagnosticMsg(`Error de carga: ${error.message}`);
+        console.error("Fallo crítico en loadData:", error);
       } finally {
         setIsInitialLoading(false);
+        console.groupEnd();
       }
     }
   };
@@ -177,9 +200,21 @@ const App: React.FC = () => {
           <div className="bg-amber-500 text-black p-4 rounded-2xl flex items-center justify-between shadow-2xl font-bold">
             <div className="flex items-center gap-3">
               <AlertCircle size={20} />
-              <span className="text-sm">Sesión de Google caducada.</span>
+              <span className="text-sm">Sesión caducada.</span>
             </div>
             <button onClick={() => { setSessionError(false); setActiveView(ViewType.SETTINGS); }} className="bg-black text-white px-4 py-2 rounded-xl text-xs">Reconectar</button>
+          </div>
+        </div>
+      )}
+
+      {diagnosticMsg && (
+        <div className="fixed bottom-24 md:bottom-8 right-4 md:right-8 z-[150] w-80 animate-in slide-in-from-right-4">
+          <div className="bg-[#151823] border border-amber-500/50 p-4 rounded-2xl shadow-2xl space-y-2">
+            <div className="flex items-center gap-2 text-amber-500 font-bold text-[10px] uppercase tracking-widest">
+              <Info size={14} /> Sistema de Diagnóstico
+            </div>
+            <p className="text-[11px] text-[#A0A6B1] leading-relaxed">{diagnosticMsg}</p>
+            <p className="text-[9px] text-[#646B7B] italic">Mira la consola (F12) para detalles técnicos.</p>
           </div>
         </div>
       )}
