@@ -127,7 +127,11 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     } catch (err: any) {
       console.error(err);
       setStatus('error');
-      setErrorMessage(err.message || "Error al procesar el audio.");
+      if (err.message === "API_KEY_MISSING") {
+        setErrorMessage("Falta configurar la clave de IA en Ajustes.");
+      } else {
+        setErrorMessage(err.message || "Error al procesar el audio.");
+      }
     }
   };
 

@@ -12,6 +12,7 @@ import SettingsView from './views/SettingsView.tsx';
 import InstructionsView from './views/InstructionsView.tsx';
 import CarceMailView from './views/CarceMailView.tsx';
 import BankView from './views/BankView.tsx';
+import TestView from './views/TestView.tsx';
 import { googleApi } from './lib/googleApi.ts';
 import { Menu, X, RefreshCw, AlertCircle, Info } from 'lucide-react';
 
@@ -20,7 +21,6 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [sessionError, setSessionError] = useState(false);
-  const [diagnosticMsg, setDiagnosticMsg] = useState<string | null>(null);
   
   const [googleConfig, setGoogleConfig] = useState<GoogleConfig>(() => {
     const saved = localStorage.getItem('carcemind_google_config');
@@ -50,18 +50,13 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Función para parsear fechas de forma segura (maneja DD/MM/YYYY y ISO)
   const safeParseDate = (dateStr: any): Date => {
     if (!dateStr) return new Date();
-    // Si ya es un objeto Date
     if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? new Date() : dateStr;
-    
-    // Si viene como string DD/MM/YYYY
     if (typeof dateStr === 'string' && dateStr.includes('/')) {
       const [d, m, y] = dateStr.split('/').map(Number);
       if (d && m && y) return new Date(y, m - 1, d);
     }
-    
     const d = new Date(dateStr);
     return isNaN(d.getTime()) ? new Date() : d;
   };
@@ -87,31 +82,16 @@ const App: React.FC = () => {
       setIsInitialLoading(true);
       setSessionError(false);
       
-      console.group("🔍 DIAGNÓSTICO CARCEMIND");
-
-      const safeLoad = async (tabName: string) => {
-        try {
-          const rows = await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
-          console.log(`📊 LECTURA: ${tabName} -> Filas encontradas: ${rows.length}`);
-          return rows;
-        } catch (e: any) {
-          if (e.message.includes("SESSION_EXPIRED")) throw e;
-          console.warn(`Pestaña ${tabName} no accesible:`, e.message);
-          return [];
-        }
-      };
-
       try {
         const [memRows, taskRows, taCorr, taAho, perCorr, perAho] = await Promise.all([
-          safeLoad('ENTRADAS'),
-          safeLoad('TAREAS'),
-          safeLoad('TA_CORRIENTE'),
-          safeLoad('TA_AHORRO'),
-          safeLoad('PERSONAL_CORRIENTE'),
-          safeLoad('PERSONAL_AHORRO')
+          googleApi.getRows(googleConfig.spreadsheetId!, 'ENTRADAS', googleConfig.accessToken!),
+          googleApi.getRows(googleConfig.spreadsheetId!, 'TAREAS', googleConfig.accessToken!),
+          googleApi.getRows(googleConfig.spreadsheetId!, 'TA_CORRIENTE', googleConfig.accessToken!).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId!, 'TA_AHORRO', googleConfig.accessToken!).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId!, 'PERSONAL_CORRIENTE', googleConfig.accessToken!).catch(() => []),
+          googleApi.getRows(googleConfig.spreadsheetId!, 'PERSONAL_AHORRO', googleConfig.accessToken!).catch(() => [])
         ]);
 
-        // Procesamiento Memorias
         if (memRows.length > 1) {
           const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
             id: String(r[0]), 
@@ -126,10 +106,8 @@ const App: React.FC = () => {
             type: 'voice'
           })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
           setMemories(loadedMemories);
-          console.log("✅ Memorias mapeadas:", loadedMemories.length);
         }
 
-        // Procesamiento Tareas
         if (taskRows.length > 1) {
           const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
             id: String(r[0]), 
@@ -143,10 +121,8 @@ const App: React.FC = () => {
             completedAt: r[7] ? safeParseDate(r[7]) : null
           }));
           setTasks(loadedTasks);
-          console.log("✅ Tareas mapeadas:", loadedTasks.length);
         }
 
-        // Procesamiento Finanzas
         const combinedFinance = [
           ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
           ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
@@ -154,14 +130,11 @@ const App: React.FC = () => {
           ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
         ].filter(t => t.date && t.concept);
         setBankTrans(combinedFinance);
-        console.log("✅ Finanzas mapeadas:", combinedFinance.length);
 
       } catch (error: any) {
         if (error.message === "SESSION_EXPIRED") setSessionError(true);
-        console.error("Fallo crítico en loadData:", error);
       } finally {
         setIsInitialLoading(false);
-        console.groupEnd();
       }
     }
   };
@@ -179,6 +152,7 @@ const App: React.FC = () => {
       case ViewType.MEMORIES: return <MemoriesView memories={memories} onDeleteMemory={handleDeleteMemory} />;
       case ViewType.SETTINGS: return <SettingsView config={googleConfig} setConfig={setGoogleConfig} />;
       case ViewType.INSTRUCTIONS: return <InstructionsView />;
+      case ViewType.TEST: return <TestView />;
       default: return <Dashboard memories={memories} tasks={tasks} onRefresh={loadData} isLoading={isInitialLoading} />;
     }
   };

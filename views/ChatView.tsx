@@ -90,7 +90,11 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       setMessages(prev => [...prev, aiMsg]);
       saveToCloud(aiMsg);
     } catch (err: any) {
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: "Lo siento Pablo, he tenido un problema al consultar tu archivo maestro.", timestamp: new Date() }]);
+      const errorText = err.message === "API_KEY_MISSING" 
+        ? "Pablo, no detecto una clave de IA activa. Por favor, ve a la pestaña AJUSTES y pulsa 'Gestionar Clave de Google AI'."
+        : "Lo siento Pablo, he tenido un problema al consultar tu archivo maestro.";
+        
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }

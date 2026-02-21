@@ -9,7 +9,8 @@ export enum ViewType {
   SETTINGS = 'SETTINGS',
   INSTRUCTIONS = 'INSTRUCTIONS',
   MAIL = 'MAIL',
-  BANK = 'BANK'
+  BANK = 'BANK',
+  TEST = 'TEST'
 }
 
 export interface GoogleConfig {
