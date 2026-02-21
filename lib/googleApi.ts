@@ -1,35 +1,33 @@
 
+
 import { GoogleConfig, Memory, Task } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
-  // Obtain API key exclusively from environment variable as per guidelines.
   getApiKey() {
-    return process.env.API_KEY;
+    const env = (import.meta as any).env;
+    const proc = (process as any).env;
+    const key = env?.VITE_API_KEY || proc?.VITE_API_KEY || proc?.API_KEY;
+    if (!key || key === 'undefined') return null;
+    return key;
   },
 
   // Función para llamar a Gemini con reintentos automáticos si hay saturación (Error 429)
-  // Added usePro to parameters to fix type errors in ChatView and CarceMailView.
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob }) {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
-    // Initialize GoogleGenAI with a named parameter as per guidelines.
     const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
     const maxRetries = 2;
 
     const execute = async (): Promise<any> => {
       try {
-        // Select model based on complexity; gemini-3-pro-preview for complex tasks (usePro).
-        const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-
         const config: any = { 
-          model: modelName,
+          model: 'gemini-3-flash-preview',
           config: { 
             temperature: 0.7,
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
-            // responseMimeType: "application/json" is supported when not using incompatible tools.
             ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
           }
         };
@@ -46,9 +44,7 @@ export const googleApi = {
           contents = params.prompt;
         }
 
-        // Use ai.models.generateContent to query with model and prompt.
         const result = await ai.models.generateContent({ ...config, contents });
-        // The result object contains a .text property which callers will access.
         return result;
       } catch (error: any) {
         if (error.message?.includes('429') && retries < maxRetries) {
@@ -95,12 +91,6 @@ export const googleApi = {
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     formData.append('file', blob);
     const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { method: 'POST', body: formData });
-    return await response.json();
-  },
-
-  // Implemented getSpreadsheetMetadata to resolve the error in SettingsView.tsx.
-  async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
     return await response.json();
   },
 
