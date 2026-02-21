@@ -46,6 +46,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
   }, [messages, isTyping]);
 
   const saveToCloud = async (msg: Message) => {
+    // Corrected: using spreadsheetId from GoogleConfig
     if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
       try {
         await googleApi.appendRow(googleConfig.spreadsheetId, 'CHAT_LOG', [msg.id, msg.timestamp.toISOString(), msg.role, msg.text], googleConfig.accessToken);
@@ -64,8 +65,12 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
 
     try {
       const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
-      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. Contexto: ${memoryContext}`;
       
+      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. 
+      CONTEXTO DE MEMORIAS:
+      ${memoryContext}`;
+      
+      // Corrected: using safeAiCall from googleApi
       const response = await googleApi.safeAiCall({
         prompt: input,
         systemInstruction

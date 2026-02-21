@@ -23,6 +23,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig, on
     setIsSyncing(true);
     const completionDate = newStatus === 'terminada' ? new Date().toISOString() : null;
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus, completedAt: completionDate ? new Date(completionDate) : null, completed: newStatus === 'terminada' } : t));
+    // Corrected: using spreadsheetId from GoogleConfig and methods from googleApi
     if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
       try {
         await googleApi.updateTaskStatusAndDate(googleConfig.spreadsheetId, id, newStatus, completionDate, googleConfig.accessToken);
@@ -40,6 +41,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, setTasks, googleConfig, on
     if (!editValue.trim()) return;
     setIsSyncing(true);
     setTasks(prev => prev.map(t => t.id === id ? { ...t, title: editValue } : t));
+    // Corrected: using spreadsheetId from GoogleConfig and methods from googleApi
     if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
       try {
         await googleApi.updateTaskDetail(googleConfig.spreadsheetId, id, editValue, googleConfig.accessToken);
