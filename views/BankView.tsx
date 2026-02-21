@@ -23,7 +23,6 @@ const BankView: React.FC<BankViewProps> = ({ googleConfig }) => {
   ];
 
   const handleOpenFile = () => {
-    // Corrected: using spreadsheetId from GoogleConfig
     if (googleConfig.spreadsheetId) {
       window.open(`https://docs.google.com/spreadsheets/d/${googleConfig.spreadsheetId}/edit`, '_blank');
     }

@@ -56,9 +56,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const processAudio = async (blob: Blob) => {
     setStatus('uploading');
     try {
-      // Corrected: using audioFolderId if available
-      const folderId = googleConfig.audioFolderId || 'root';
-      const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, folderId);
+      const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
       
@@ -87,37 +85,34 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
-      // Corrected: using spreadsheetId if available
-      if (googleConfig.spreadsheetId) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'ENTRADAS', [
-          entryId, 
-          new Date().toISOString(), 
-          data.title, 
-          data.summary, 
-          data.emotionalState, 
-          data.tags?.join(', '), 
-          driveFile.id, 
-          driveFile.webViewLink, 
-          data.snippets?.join(' | '),
-          data.fullTranscript
-        ], googleConfig.accessToken!);
+      await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
+        entryId, 
+        new Date().toISOString(), 
+        data.title, 
+        data.summary, 
+        data.emotionalState, 
+        data.tags?.join(', '), 
+        driveFile.id, 
+        driveFile.webViewLink, 
+        data.snippets?.join(' | '),
+        data.fullTranscript
+      ], googleConfig.accessToken!);
 
-        if (data.tasks && data.tasks.length > 0) {
-          for (const task of data.tasks) {
-            const deadlineDate = new Date();
-            deadlineDate.setDate(deadlineDate.getDate() + (task.daysToDeadline || 1));
-            
-            await googleApi.appendRow(googleConfig.spreadsheetId, 'TAREAS', [
-              crypto.randomUUID(),
-              new Date().toISOString(),
-              task.title,
-              task.priority || 'medium',
-              'pendiente', 
-              entryId,
-              deadlineDate.toISOString(),
-              '' 
-            ], googleConfig.accessToken!);
-          }
+      if (data.tasks && data.tasks.length > 0) {
+        for (const task of data.tasks) {
+          const deadlineDate = new Date();
+          deadlineDate.setDate(deadlineDate.getDate() + (task.daysToDeadline || 1));
+          
+          await googleApi.appendRow(googleConfig.spreadsheetId!, 'TAREAS', [
+            crypto.randomUUID(),
+            new Date().toISOString(),
+            task.title,
+            task.priority || 'medium',
+            'pendiente', 
+            entryId,
+            deadlineDate.toISOString(),
+            '' 
+          ], googleConfig.accessToken!);
         }
       }
 
