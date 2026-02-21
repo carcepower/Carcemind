@@ -1,18 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig } from './types';
-import Sidebar from './components/Sidebar';
-import Dashboard from './views/Dashboard';
-import RecordMemory from './views/RecordMemory';
-import ChatView from './views/ChatView';
-import TasksView from './views/TasksView';
-import MemoriesView from './views/MemoriesView';
-import RemindersView from './views/RemindersView';
-import SettingsView from './views/SettingsView';
-import InstructionsView from './views/InstructionsView';
-import CarceMailView from './views/CarceMailView';
-import BankView from './views/BankView';
-import { googleApi } from './lib/googleApi';
+import { ViewType, Memory, Task, Message, GoogleConfig, GmailConfig } from './types.ts';
+import Sidebar from './components/Sidebar.tsx';
+import Dashboard from './views/Dashboard.tsx';
+import RecordMemory from './views/RecordMemory.tsx';
+import ChatView from './views/ChatView.tsx';
+import TasksView from './views/TasksView.tsx';
+import MemoriesView from './views/MemoriesView.tsx';
+import RemindersView from './views/RemindersView.tsx';
+import SettingsView from './views/SettingsView.tsx';
+import InstructionsView from './views/InstructionsView.tsx';
+import CarceMailView from './views/CarceMailView.tsx';
+import BankView from './views/BankView.tsx';
+import { googleApi } from './lib/googleApi.ts';
 import { Menu, X, RefreshCw, AlertCircle } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -88,7 +88,6 @@ const App: React.FC = () => {
         const perCorr = await safeLoad('PERSONAL_CORRIENTE');
         const perAho = await safeLoad('PERSONAL_AHORRO');
 
-        // Mapeo ENTRADAS (ID, Fecha, Título, Resumen, Emocion, Tags, DriveID, Link, Snippets)
         if (memRows.length > 1) {
           const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
             id: r[0], 
@@ -105,7 +104,6 @@ const App: React.FC = () => {
           setMemories(loadedMemories);
         }
 
-        // Mapeo TAREAS (ID, Fecha, Título, Prioridad, Estado, Origen, Límite, Cierre)
         if (taskRows.length > 1) {
           const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
             id: r[0], 
@@ -121,12 +119,9 @@ const App: React.FC = () => {
           setTasks(loadedTasks);
         }
 
-        // Mapeo FINANZAS combinando los dos estilos (Sabadell y Caixabank)
         const combinedFinance = [
-          // Sabadell (Operativa, Concepto, Valor, Importe, Saldo, Ref1, Ref2)
           ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
           ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
-          // Caixabank (Fecha, Valor, Movimiento, MasDatos, Importe, Saldo)
           ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
           ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
         ].filter(t => t.date && t.concept);
