@@ -3,9 +3,6 @@ import { GoogleConfig, Memory, Task } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
-  /**
-   * Llamada estandarizada a Gemini.
-   */
   async safeAiCall(params: { 
     prompt: string, 
     systemInstruction?: string, 
@@ -57,9 +54,15 @@ export const googleApi = {
       headers.set('Content-Type', 'application/json');
     }
     const response = await fetch(url, { ...options, headers });
+    
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message = errorData.error?.message || `Error ${response.status}`;
+      
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      throw new Error(`Error Google API: ${response.status}`);
+      if (response.status === 400) throw new Error(`CONFIG_ERROR: ${message}`);
+      
+      throw new Error(message);
     }
     return response;
   },
@@ -69,20 +72,61 @@ export const googleApi = {
     return await response.json();
   },
 
+  async createSheetTabs(spreadsheetId: string, titles: string[], token: string) {
+    const requests = titles.map(title => ({
+      addSheet: { properties: { title } }
+    }));
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, {
+      method: 'POST',
+      body: JSON.stringify({ requests })
+    });
+  },
+
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    // Uso de comillas simples para evitar errores de sintaxis en el rango
-    const range = `'${sheetName}'!A1:append`;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, token, { 
+    // Rango escapado para evitar errores 400 si la pestaña no existe o tiene caracteres especiales
+    const range = encodeURIComponent(`'${sheetName}'!A1`);
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, token, { 
       method: 'POST', 
       body: JSON.stringify({ values: [values] }) 
     });
   },
 
   async getRows(spreadsheetId: string, sheetName: string, token: string) {
-    const range = `'${sheetName}'!A:Z`;
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`, token);
+    const range = encodeURIComponent(`'${sheetName}'!A:Z`);
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, token);
     const data = await response.json();
     return data.values || [];
+  },
+
+  async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
+    const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
+    const rowIndex = rows.findIndex(row => row[0] === id);
+    if (rowIndex === -1) return;
+    const rowNum = rowIndex + 1;
+    // TAREAS: ID(A), FECHA_C(B), TITULO(C), PRIORIDAD(D), ESTADO(E), ORIGEN(F), LIMITE(G), CIERRE(H)
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        valueInputOption: 'RAW', 
+        data: [
+          { range: `'TAREAS'!E${rowNum}`, values: [[status]] }, 
+          { range: `'TAREAS'!H${rowNum}`, values: [[completionDate || '']] }
+        ] 
+      }) 
+    });
+  },
+
+  async updateTaskDetail(spreadsheetId: string, id: string, newTitle: string, token: string) {
+    const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
+    const rowIndex = rows.findIndex(row => row[0] === id);
+    if (rowIndex === -1) return;
+    const rowNum = rowIndex + 1;
+    // Columna C (3) es la descripción/título
+    const range = encodeURIComponent(`'TAREAS'!C${rowNum}`);
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=RAW`, token, { 
+      method: 'PUT', 
+      body: JSON.stringify({ values: [[newTitle]] }) 
+    });
   },
 
   async findFileInFolder(token: string, fileName: string, folderId: string) {
@@ -101,34 +145,6 @@ export const googleApi = {
       body: formData 
     });
     return await response.json();
-  },
-
-  async updateTaskStatusAndDate(spreadsheetId: string, id: string, status: string, completionDate: string | null, token: string) {
-    const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) return;
-    const rowNum = rowIndex + 1;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, token, { 
-      method: 'POST', 
-      body: JSON.stringify({ 
-        valueInputOption: 'RAW', 
-        data: [
-          { range: `'TAREAS'!E${rowNum}`, values: [[status]] }, 
-          { range: `'TAREAS'!H${rowNum}`, values: [[completionDate || '']] }
-        ] 
-      }) 
-    });
-  },
-
-  async updateTaskDetail(spreadsheetId: string, id: string, newTitle: string, token: string) {
-    const rows = await this.getRows(spreadsheetId, 'TAREAS', token);
-    const rowIndex = rows.findIndex(row => row[0] === id);
-    if (rowIndex === -1) return;
-    const rowNum = rowIndex + 1;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'TAREAS'!C${rowNum}?valueInputOption=RAW`, token, { 
-      method: 'PUT', 
-      body: JSON.stringify({ values: [[newTitle]] }) 
-    });
   },
 
   async listFolders(token: string) {

@@ -75,6 +75,7 @@ const App: React.FC = () => {
           return await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
         } catch (e: any) {
           if (e.message.includes("SESSION_EXPIRED")) throw e;
+          console.warn(`Error cargando pestaña ${tabName}:`, e.message);
           return [];
         }
       };
@@ -87,31 +88,54 @@ const App: React.FC = () => {
         const perCorr = await safeLoad('PERSONAL_CORRIENTE');
         const perAho = await safeLoad('PERSONAL_AHORRO');
 
+        // Mapeo ENTRADAS (ID, Fecha, Título, Resumen, Emocion, Tags, DriveID, Link, Snippets)
         if (memRows.length > 1) {
           const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], timestamp: new Date(r[1]), title: r[2], excerpt: r[3], emotionalTag: r[4], tags: r[5] ? r[5].split(', ') : [], driveFileId: r[6], driveViewLink: r[7], snippets: r[8] ? r[8].split(' | ') : [], content: r[9] || "", type: 'voice'
+            id: r[0], 
+            timestamp: new Date(r[1]), 
+            title: r[2], 
+            excerpt: r[3], 
+            emotionalTag: r[4], 
+            tags: r[5] ? r[5].split(', ') : [], 
+            driveFileId: r[6], 
+            driveViewLink: r[7], 
+            snippets: r[8] ? r[8].split(' | ') : [], 
+            type: 'voice'
           })).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
           setMemories(loadedMemories);
         }
 
+        // Mapeo TAREAS (ID, Fecha, Título, Prioridad, Estado, Origen, Límite, Cierre)
         if (taskRows.length > 1) {
           const loadedTasks: Task[] = taskRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
-            id: r[0], date: r[1], title: r[2] || "Tarea sin título", priority: (r[3] || 'medium').toLowerCase() as any, status: (r[4] || 'pendiente') as any, completed: r[4] === 'terminada', originId: r[5], deadline: r[6] ? new Date(r[6]) : new Date(), completedAt: r[7] ? new Date(r[7]) : null
+            id: r[0], 
+            date: r[1], 
+            title: r[2] || "Tarea sin título", 
+            priority: (r[3] || 'medium').toLowerCase() as any, 
+            status: (r[4] || 'pendiente') as any, 
+            completed: r[4] === 'terminada', 
+            originId: r[5], 
+            deadline: r[6] ? new Date(r[6]) : new Date(), 
+            completedAt: r[7] ? new Date(r[7]) : null
           }));
           setTasks(loadedTasks);
         }
 
+        // Mapeo FINANZAS combinando los dos estilos (Sabadell y Caixabank)
         const combinedFinance = [
+          // Sabadell (Operativa, Concepto, Valor, Importe, Saldo, Ref1, Ref2)
           ...taCorr.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Corriente' })),
           ...taAho.slice(1).map(r => ({ date: r[0], concept: r[1], amount: r[3], type: 'TA_Empresa_Ahorro' })),
+          // Caixabank (Fecha, Valor, Movimiento, MasDatos, Importe, Saldo)
           ...perCorr.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Corriente' })),
           ...perAho.slice(1).map(r => ({ date: r[0], concept: r[2], amount: r[4], type: 'Personal_Caixa_Ahorro' }))
-        ].filter(t => t.date);
+        ].filter(t => t.date && t.concept);
+        
         setBankTrans(combinedFinance);
 
       } catch (error: any) {
         if (error.message === "SESSION_EXPIRED") setSessionError(true);
-        console.error("Error de carga:", error);
+        console.error("Error crítico en carga de datos:", error);
       } finally {
         setIsInitialLoading(false);
       }

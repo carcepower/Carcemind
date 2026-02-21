@@ -61,14 +61,13 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       setStatus('processing');
       
       const prompt = `
-        Analiza este audio y genera un JSON estrictamente válido:
+        Analiza este audio y genera un JSON estrictamente válido con este formato:
         {
           "title": "título corto",
           "summary": "resumen ejecutivo",
           "emotionalState": "estado de ánimo",
           "tags": ["tag1", "tag2"],
           "snippets": ["frase clave 1"],
-          "fullTranscript": "Transcripción íntegra palabra por palabra del audio",
           "tasks": [
             {"title": "descripción de la tarea", "priority": "low|medium|high", "daysToDeadline": 1}
           ]
@@ -85,6 +84,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
+      // ENTRADAS: ID(0), Fecha(1), Título(2), Resumen(3), Emocion(4), Tags(5), DriveID(6), Link(7), Snippets(8)
       await googleApi.appendRow(googleConfig.spreadsheetId!, 'ENTRADAS', [
         entryId, 
         new Date().toISOString(), 
@@ -94,8 +94,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         data.tags?.join(', '), 
         driveFile.id, 
         driveFile.webViewLink, 
-        data.snippets?.join(' | '),
-        data.fullTranscript
+        data.snippets?.join(' | ')
       ], googleConfig.accessToken!);
 
       if (data.tasks && data.tasks.length > 0) {
@@ -103,6 +102,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
           const deadlineDate = new Date();
           deadlineDate.setDate(deadlineDate.getDate() + (task.daysToDeadline || 1));
           
+          // TAREAS: ID(0), Fecha(1), Título(2), Prioridad(3), Estado(4), Origen(5), Límite(6)
           await googleApi.appendRow(googleConfig.spreadsheetId!, 'TAREAS', [
             crypto.randomUUID(),
             new Date().toISOString(),
@@ -110,8 +110,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             task.priority || 'medium',
             'pendiente', 
             entryId,
-            deadlineDate.toISOString(),
-            '' 
+            deadlineDate.toISOString()
           ], googleConfig.accessToken!);
         }
       }
@@ -122,20 +121,12 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         title: data.title, 
         excerpt: data.summary, 
         timestamp: new Date(), 
-        type: 'voice',
-        content: data.fullTranscript 
+        type: 'voice'
       });
     } catch (err: any) {
       console.error(err);
       setStatus('error');
-      
-      if (err.message?.includes('429')) {
-        setErrorMessage("Límite de cuota excedido. Por favor, espera un minuto antes de volver a grabar.");
-      } else if (err.message?.includes('403')) {
-        setErrorMessage("Error de permisos (403). Verifica que la API de Google Cloud esté activa.");
-      } else {
-        setErrorMessage("Ha ocurrido un error al procesar el audio. Inténtalo de nuevo en unos instantes.");
-      }
+      setErrorMessage(err.message || "Error al procesar el audio.");
     }
   };
 
@@ -143,7 +134,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Tu voz se procesa y se extrae la transcripción completa.</p>
+        <p className="text-[#A0A6B1]">Graba tus pensamientos; CarceMind se encargará de estructurarlos.</p>
       </div>
 
       <button
@@ -157,7 +148,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Atención' : status + '...'}
+            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Atención' : status.toUpperCase() + '...'}
           </p>
           {status === 'error' && (
             <div className="flex flex-col items-center gap-2 mt-2">
