@@ -27,11 +27,11 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
           return (
             <div key={i} className="flex gap-4 pl-2 items-start">
               <div className="mt-2 shrink-0"><Circle size={6} fill="#5E7BFF" className="text-[#5E7BFF]" /></div>
-              <p className="text-[15px] leading-relaxed text-[#F5F7FA]" dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<b class="text-white">$1</b>') }} />
+              <p className="text-[15px] leading-relaxed text-[#F5F7FA]" dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<b class="text-white font-semibold">$1</b>') }} />
             </div>
           );
         }
-        return <p key={i} className="text-[15px] leading-relaxed text-[#A0A6B1]" dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<b class="text-white">$1</b>') }} />;
+        return <p key={i} className="text-[15px] leading-relaxed text-[#A0A6B1]" dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<b class="text-white font-semibold">$1</b>') }} />;
       })}
     </div>
   );
@@ -66,73 +66,56 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     setPrompt(''); 
 
     try {
-      // 1. LOG DE USUARIO (Guardar SIEMPRE)
+      // 1. LOG DE USUARIO
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(
-          googleConfig.spreadsheetId, 
-          'MAIL_LOG', 
-          [Date.now().toString(), new Date().toISOString(), "USER", currentPrompt, ""], 
-          googleConfig.accessToken
-        );
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "USER", currentPrompt, ""], googleConfig.accessToken);
       }
 
-      // 2. IA Gemini
+      // 2. Extraer términos de búsqueda optimizados
       const extraction = await googleApi.safeAiCall({
-        prompt: `Analiza esta petición y devuelve únicamente los términos de búsqueda ideales para Gmail: "${currentPrompt}"`,
-        systemInstruction: "Eres un experto en búsqueda de Gmail. Devuelve solo los términos clave, sin explicaciones."
+        prompt: `Genera una consulta de búsqueda para Gmail (puedes usar operadores como from:, subject:, etc.) para: "${currentPrompt}"`,
+        systemInstruction: "Eres un experto en búsqueda de Gmail. Responde SOLO con los términos de búsqueda, sin texto adicional ni comillas."
       });
 
-      const searchTerms = extraction.text?.trim() || currentPrompt;
+      const searchTerms = extraction.text?.trim().replace(/`/g, '') || currentPrompt;
 
-      // 3. Buscar en Gmail
-      const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 5);
+      // 3. Buscar en Gmail (incrementado a 15 resultados)
+      const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 15);
       
       if (!messages || messages.length === 0) {
-        const noResultsText = "Pablo, no he encontrado correos que coincidan con esa búsqueda en tu bandeja de entrada.";
+        const noResultsText = `No he encontrado correos para la búsqueda: "${searchTerms}".`;
         setHistory(prev => [{ prompt: currentPrompt, answer: noResultsText, results: [] }, ...prev]);
-        
-        if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-          await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", noResultsText, searchTerms], googleConfig.accessToken);
-        }
         return;
       }
 
-      // 4. Detalles Gmail
+      // 4. Obtener detalles e INCLUIR REMITENTE
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
       const snippets = detailed.map(m => {
         const subject = m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto';
-        return `Asunto: ${subject} | Resumen: ${m.snippet}`;
-      }).join('\n');
+        const from = m.payload.headers.find((h: any) => h.name === 'From')?.value || 'Remitente desconocido';
+        return `DE: ${from} | ASUNTO: ${subject} | RESUMEN: ${m.snippet}`;
+      }).join('\n\n');
       
-      // 5. Análisis Final
+      // 5. Análisis Final con contexto completo
       const response = await googleApi.safeAiCall({
-        prompt: `Basado en estos correos:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
-        systemInstruction: "Eres el analista de CarceMail. Responde de forma ejecutiva, impecable y directa. Si hay fechas o datos clave, destácalos.",
+        prompt: `Basado en estos correos encontrados:\n${snippets}\n\nResponde a la consulta de Pablo: "${currentPrompt}"`,
+        systemInstruction: "Eres el analista de CarceMail. Tu objetivo es encontrar la información exacta que pide Pablo. Si pide correos de una fuente específica (como NeuraNews), identifícalos por el campo 'DE:'. Responde de forma clara y profesional.",
         usePro: true
       });
       
-      const answerText = response.text || "No he podido extraer una conclusión clara.";
+      const answerText = response.text || "No he podido analizar los resultados correctamente.";
       
       // 6. UI e Historial
       setHistory(prev => [{ prompt: currentPrompt, answer: answerText, results: detailed }, ...prev]);
       
       // 7. LOG DE IA
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(
-          googleConfig.spreadsheetId, 
-          'MAIL_LOG', 
-          [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], 
-          googleConfig.accessToken
-        );
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], googleConfig.accessToken);
       }
 
     } catch (err: any) { 
       console.error("Gmail Analysis Error:", err);
-      let userMsg = "He tenido un problema al analizar tus correos.";
-      if (err.message === "KEY_MISSING") {
-        userMsg = "Error crítico: Gemini no está respondiendo. Verifica la configuración de la API.";
-      }
-      setError(userMsg); 
+      setError("Ha ocurrido un error al consultar tu bandeja de entrada."); 
     } finally { 
       setIsSearching(false); 
     }
@@ -175,7 +158,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
           <div className="flex items-center gap-4">
             <AlertCircle size={24} /> 
             <div>
-               <p className="text-sm font-bold uppercase tracking-widest">Error de Activación</p>
+               <p className="text-sm font-bold uppercase tracking-widest">Atención</p>
                <p className="text-xs opacity-80 leading-relaxed">{error}</p>
             </div>
           </div>
@@ -196,11 +179,14 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
               
               {interaction.results.length > 0 && (
                 <div className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {interaction.results.slice(0, 2).map((msg, idx) => (
-                    <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2">
+                  {interaction.results.slice(0, 4).map((msg, idx) => (
+                    <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2 group hover:border-[#5E7BFF]/30 transition-all">
+                      <div className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest truncate">
+                        {msg.payload.headers.find((h: any) => h.name === 'From')?.value.split('<')[0]}
+                      </div>
                       <h6 className="font-semibold text-sm truncate">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
                       <p className="text-[10px] text-[#646B7B] line-clamp-2 leading-relaxed">{msg.snippet}</p>
-                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1">Ver en Gmail <ExternalLink size={10} /></button>
+                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-white/40 group-hover:text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1 transition-colors">Abrir en Gmail <ExternalLink size={10} /></button>
                     </div>
                   ))}
                 </div>
