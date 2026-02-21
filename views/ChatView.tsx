@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { Send, Sparkles, User, BrainCircuit, Loader2, Trash2, AlertCircle, Key } from 'lucide-react';
+import { Send, Sparkles, User, BrainCircuit, Loader2, Trash2, AlertCircle } from 'lucide-react';
 
 interface ChatViewProps {
   memories: Memory[];
@@ -54,15 +54,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     }
   };
 
-  const handleOpenKeySelector = async () => {
-    if ((window as any).aistudio) {
-      await (window as any).aistudio.openSelectKey();
-      // Permitimos que el usuario reintente sin refrescar para no perder el contexto
-    }
-  };
-
   const handleReset = () => {
-    if (window.confirm("¿Limpiar historial de la conversación actual?")) {
+    if (window.confirm("¿Limpiar historial de la conversación?")) {
       setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado. Sigo conectado a tu archivo maestro CarceMind_Memory_Index, Pablo.', timestamp: new Date() }]);
     }
   };
@@ -77,10 +70,10 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      const memoryContext = memories.slice(0, 30).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-50).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
+      const memoryContext = memories.slice(0, 50).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
+      const bankContext = bankData.slice(-100).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
       
-      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.`;
+      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional e impecable. Responde basándote en su historial de memorias y finanzas.`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
@@ -97,14 +90,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       setMessages(prev => [...prev, aiMsg]);
       saveToCloud(aiMsg);
     } catch (err: any) {
-      console.error("Chat Error:", err);
-      let errorText = "Pablo, he tenido un problema de conexión con tu Archivo Maestro.";
-      
-      if (err.message === "KEY_MISSING" || err.message === "KEY_INVALID_OR_MISSING") {
-        errorText = "API KEY REQUERIDA: He perdido mi conexión neuronal. Por favor, pulsa el botón de abajo para activar Gemini.";
-      }
-
-      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
+      setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: "Lo siento Pablo, he tenido un problema al consultar tu archivo maestro.", timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
     }
@@ -119,7 +105,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
           </div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Acceso Maestro: Memoria e Inteligencia Financiera</p>
+            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Inteligencia de Memoria Pro</p>
           </div>
         </div>
         <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">
@@ -133,13 +119,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${msg.role === 'user' ? 'bg-[#151823] border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/20 border-red-500/30' : 'bg-[#5E7BFF] border-[#5E7BFF] shadow-lg shadow-[#5E7BFF33]'}`}>
               {msg.role === 'user' ? <User size={18} /> : msg.id === 'err' ? <AlertCircle size={18} className="text-red-400" /> : <Sparkles size={18} />}
             </div>
-            <div className={`p-6 rounded-[2rem] max-w-[85%] flex flex-col gap-4 ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/5 border border-red-500/10' : 'bg-white/5 border border-white/5'}`}>
+            <div className={`p-6 rounded-[2rem] max-w-[85%] flex flex-col gap-4 ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : 'bg-white/5 border border-white/5'}`}>
               {msg.role === 'assistant' ? <FormattedResponse text={msg.text} /> : <p className="text-sm leading-relaxed">{msg.text}</p>}
-              {(msg.text.includes("KEY REQUERIDA") || msg.id === 'err') && (
-                <button onClick={handleOpenKeySelector} className="flex items-center gap-2 w-fit px-4 py-2 bg-red-500 text-white rounded-xl font-bold text-[9px] uppercase tracking-widest hover:scale-105 transition-all">
-                  <Key size={12} /> Vincular API KEY
-                </button>
-              )}
             </div>
           </div>
         ))}
@@ -156,7 +137,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       </div>
 
       <div className="mt-10 relative">
-        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Pablo, ¿qué analizamos hoy?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16 shadow-2xl" />
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Pablo, ¿en qué profundizamos hoy?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16 shadow-2xl" />
         <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-xl"><Send size={20} /></button>
       </div>
     </div>

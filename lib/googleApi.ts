@@ -4,8 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   /**
-   * Ejecuta una llamada a Gemini.
-   * Crea una instancia nueva en cada llamada para asegurar que captura la API KEY recién vinculada.
+   * Llamada estandarizada a Gemini.
    */
   async safeAiCall(params: { 
     prompt: string, 
@@ -14,20 +13,10 @@ export const googleApi = {
     audioBlob?: Blob, 
     usePro?: boolean 
   }) {
-    // La clave debe obtenerse exclusivamente de process.env.API_KEY
-    const apiKey = process.env.API_KEY;
-    
-    if (!apiKey) {
-      console.error("CRÍTICO: process.env.API_KEY es null o undefined.");
-      throw new Error("KEY_MISSING");
-    }
-
-    // Instancia fresca según requerimiento para evitar stale keys
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
     
     try {
-      const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-      
       let contents: any;
       if (params.isAudio && params.audioBlob) {
         const base64Audio = await new Promise<string>(r => {
@@ -49,30 +38,19 @@ export const googleApi = {
         model: modelName,
         contents: contents,
         config: {
-          systemInstruction: params.systemInstruction,
-          temperature: 0.1
+          systemInstruction: params.systemInstruction || "Eres CarceMind, el asistente de memoria personal de Pablo.",
+          temperature: 0.2
         }
       });
       
       return response;
     } catch (error: any) {
-      console.error("Error técnico Gemini:", error);
-      const msg = error.message || "";
-      
-      // Regla de negocio: Si la entidad no se encuentra, la llave es inválida o el proyecto no existe
-      if (msg.includes('Requested entity was not found')) {
-        throw new Error("KEY_INVALID_OR_MISSING");
-      }
-      
-      if (msg.includes('429')) throw new Error("QUOTA_EXCEEDED");
-      if (msg.includes('API key') || msg.includes('set when running')) throw new Error("KEY_MISSING");
-      if (msg.includes('403')) throw new Error("PERMISSION_DENIED");
+      console.error("Error en comunicación con Gemini:", error.message);
       throw error;
     }
   },
 
   async fetchWithAuth(url: string, token: string, options: RequestInit = {}) {
-    if (!token) throw new Error("TOKEN_MISSING");
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     if (options.body && !headers.has('Content-Type')) {
@@ -81,39 +59,34 @@ export const googleApi = {
     const response = await fetch(url, { ...options, headers });
     if (!response.ok) {
       if (response.status === 401) throw new Error("SESSION_EXPIRED");
-      throw new Error(`Error API Google: ${response.status}`);
+      throw new Error(`Error Google API: ${response.status}`);
     }
     return response;
   },
 
   async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title,sheets.properties.sheetId`, token);
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, token);
     return await response.json();
   },
 
   async appendRow(spreadsheetId: string, sheetName: string, values: any[], token: string) {
-    try {
-      console.log(`Solicitando escritura en Sheets para: ${sheetName}`);
-      const res = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=USER_ENTERED`, token, { 
-        method: 'POST', 
-        body: JSON.stringify({ values: [values] }) 
-      });
-      if (res.ok) {
-        console.log(`CONFIRMADO: Fila añadida en ${sheetName}. Pablo, revisa el FINAL de tu hoja.`);
-      }
-    } catch (e: any) {
-      console.warn(`Fallo en appendRow (${sheetName}):`, e.message);
-    }
+    // Uso de comillas simples para evitar errores de sintaxis en el rango
+    const range = `'${sheetName}'!A1:append`;
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, token, { 
+      method: 'POST', 
+      body: JSON.stringify({ values: [values] }) 
+    });
   },
 
   async getRows(spreadsheetId: string, sheetName: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A:Z`, token);
+    const range = `'${sheetName}'!A:Z`;
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`, token);
     const data = await response.json();
     return data.values || [];
   },
 
   async findFileInFolder(token: string, fileName: string, folderId: string) {
-    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`)}&fields=files(id, name, webViewLink)`, token);
+    const response = await this.fetchWithAuth(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${fileName}' and '${folderId}' in parents and trashed = false`)}&fields=files(id, name)`, token);
     const data = await response.json();
     return data.files?.[0] || null;
   },
@@ -140,8 +113,8 @@ export const googleApi = {
       body: JSON.stringify({ 
         valueInputOption: 'RAW', 
         data: [
-          { range: `TAREAS!E${rowNum}`, values: [[status]] }, 
-          { range: `TAREAS!H${rowNum}`, values: [[completionDate || '']] }
+          { range: `'TAREAS'!E${rowNum}`, values: [[status]] }, 
+          { range: `'TAREAS'!H${rowNum}`, values: [[completionDate || '']] }
         ] 
       }) 
     });
@@ -152,7 +125,7 @@ export const googleApi = {
     const rowIndex = rows.findIndex(row => row[0] === id);
     if (rowIndex === -1) return;
     const rowNum = rowIndex + 1;
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/TAREAS!C${rowNum}?valueInputOption=RAW`, token, { 
+    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'TAREAS'!C${rowNum}?valueInputOption=RAW`, token, { 
       method: 'PUT', 
       body: JSON.stringify({ values: [[newTitle]] }) 
     });

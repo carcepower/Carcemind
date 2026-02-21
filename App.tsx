@@ -40,7 +40,7 @@ const App: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<Message[]>(() => {
     const saved = localStorage.getItem('carcemind_chat_history');
     return saved ? JSON.parse(saved) : [
-      { id: '1', role: 'assistant', text: 'Hola Pablo. He analizado tus memorias estructuradas y finanzas. ¿En qué avanzamos?', timestamp: new Date() }
+      { id: '1', role: 'assistant', text: 'Hola Pablo. Todo listo para analizar tu memoria personal y finanzas.', timestamp: new Date() }
     ];
   });
 
@@ -69,15 +69,23 @@ const App: React.FC = () => {
     if (googleConfig.isConnected && googleConfig.accessToken && googleConfig.spreadsheetId) {
       setIsInitialLoading(true);
       setSessionError(false);
+      
+      const safeLoad = async (tabName: string) => {
+        try {
+          return await googleApi.getRows(googleConfig.spreadsheetId!, tabName, googleConfig.accessToken!);
+        } catch (e: any) {
+          if (e.message.includes("SESSION_EXPIRED")) throw e;
+          return [];
+        }
+      };
+
       try {
-        const [memRows, taskRows, taCorr, taAho, perCorr, perAho] = await Promise.all([
-          googleApi.getRows(googleConfig.spreadsheetId, 'ENTRADAS', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'TAREAS', googleConfig.accessToken),
-          googleApi.getRows(googleConfig.spreadsheetId, 'TA_CORRIENTE', googleConfig.accessToken).catch(() => []),
-          googleApi.getRows(googleConfig.spreadsheetId, 'TA_AHORRO', googleConfig.accessToken).catch(() => []),
-          googleApi.getRows(googleConfig.spreadsheetId, 'PERSONAL_CORRIENTE', googleConfig.accessToken).catch(() => []),
-          googleApi.getRows(googleConfig.spreadsheetId, 'PERSONAL_AHORRO', googleConfig.accessToken).catch(() => [])
-        ]);
+        const memRows = await safeLoad('ENTRADAS');
+        const taskRows = await safeLoad('TAREAS');
+        const taCorr = await safeLoad('TA_CORRIENTE');
+        const taAho = await safeLoad('TA_AHORRO');
+        const perCorr = await safeLoad('PERSONAL_CORRIENTE');
+        const perAho = await safeLoad('PERSONAL_AHORRO');
 
         if (memRows.length > 1) {
           const loadedMemories: Memory[] = memRows.slice(1).filter((r: any) => r[0]).map((r: any) => ({
@@ -102,10 +110,8 @@ const App: React.FC = () => {
         setBankTrans(combinedFinance);
 
       } catch (error: any) {
-        if (error.message === "SESSION_EXPIRED") {
-          setSessionError(true);
-        }
-        console.error("Error cargando datos:", error);
+        if (error.message === "SESSION_EXPIRED") setSessionError(true);
+        console.error("Error de carga:", error);
       } finally {
         setIsInitialLoading(false);
       }
@@ -152,14 +158,9 @@ const App: React.FC = () => {
           <div className="bg-amber-500 text-black p-4 rounded-2xl flex items-center justify-between shadow-2xl font-bold">
             <div className="flex items-center gap-3">
               <AlertCircle size={20} />
-              <span className="text-sm">Pablo, tu sesión de Google ha caducado.</span>
+              <span className="text-sm">Sesión de Google caducada.</span>
             </div>
-            <button 
-              onClick={() => { setSessionError(false); setActiveView(ViewType.SETTINGS); }}
-              className="bg-black text-white px-4 py-2 rounded-xl text-xs"
-            >
-              Reconectar
-            </button>
+            <button onClick={() => { setSessionError(false); setActiveView(ViewType.SETTINGS); }} className="bg-black text-white px-4 py-2 rounded-xl text-xs">Reconectar</button>
           </div>
         </div>
       )}

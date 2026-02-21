@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { 
-  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Key, Sparkles, ExternalLink
+  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Database, Wallet, Sparkles
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -18,24 +18,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFolderSelector, setActiveFolderSelector] = useState<'audio' | 'sheet' | null>(null);
-  const [isKeyLinked, setIsKeyLinked] = useState(false);
-  
+
   const [indexStatus, setIndexStatus] = useState<'searching' | 'found' | 'not_found' | 'idle'>('idle');
-  const [financeStatus, setFinanceStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'not_found' | 'idle'>('idle');
+  const [financeStatus, setFinanceStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'idle'>('idle');
   const [logsStatus, setLogsStatus] = useState<'searching' | 'found' | 'tabs_missing' | 'idle'>('idle');
   const [missingTabs, setMissingTabs] = useState<string[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
-
-  useEffect(() => {
-    checkKeyStatus();
-  }, []);
-
-  const checkKeyStatus = async () => {
-    if ((window as any).aistudio?.hasSelectedApiKey) {
-      const linked = await (window as any).aistudio.hasSelectedApiKey();
-      setIsKeyLinked(linked);
-    }
-  };
 
   useEffect(() => {
     if (config.isConnected && config.accessToken) loadFolders();
@@ -45,24 +32,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     if (config.isConnected && config.accessToken && config.sheetFolderId) checkForIndexIntegrity();
   }, [config.sheetFolderId, config.accessToken]);
 
-  const handleOpenKeySelector = async () => {
-    try {
-      if ((window as any).aistudio) {
-        await (window as any).aistudio.openSelectKey();
-        // Asumimos éxito según guías para proceder sin bloqueos
-        setIsKeyLinked(true);
-      }
-    } catch (e) {
-      setError("No se pudo abrir el selector de llaves.");
-    }
-  };
-
   const checkForIndexIntegrity = async () => {
     if (!config.accessToken || !config.sheetFolderId) return;
     setIndexStatus('searching');
     setFinanceStatus('searching');
     setLogsStatus('searching');
-    setMissingTabs([]);
     
     try {
       const file = await googleApi.findFileInFolder(config.accessToken, 'CarceMind_Memory_Index', config.sheetFolderId);
@@ -73,19 +47,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
         const metadata = await googleApi.getSpreadsheetMetadata(file.id, config.accessToken);
         const existingTabs = metadata.sheets.map((s: any) => s.properties.title);
         
-        // Check Finanzas
         const financeTabs = ['TA_CORRIENTE', 'TA_AHORRO', 'PERSONAL_CORRIENTE', 'PERSONAL_AHORRO'];
         const mFinance = financeTabs.filter(tab => !existingTabs.includes(tab));
         setFinanceStatus(mFinance.length === 0 ? 'found' : 'tabs_missing');
 
-        // Check Logs
         const logTabs = ['CHAT_LOG', 'MAIL_LOG', 'ENTRADAS', 'TAREAS'];
         const mLogs = logTabs.filter(tab => !existingTabs.includes(tab));
         setLogsStatus(mLogs.length === 0 ? 'found' : 'tabs_missing');
         
-        if (mFinance.length > 0 || mLogs.length > 0) {
-          setMissingTabs([...new Set([...mFinance, ...mLogs])]);
-        }
+        setMissingTabs([...new Set([...mFinance, ...mLogs])]);
       } else {
         setIndexStatus('not_found');
       }
@@ -136,7 +106,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
   };
 
   const handleDisconnect = () => {
-    setConfig(prev => ({ ...prev, isConnected: false, accessToken: null, email: null }));
+    setConfig(prev => ({ ...prev, isConnected: false, accessToken: null, email: null, spreadsheetId: null }));
     setFolders([]);
     setIndexStatus('idle');
   };
@@ -152,41 +122,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-12 pb-32 animate-in fade-in duration-700">
-      <header className="flex justify-between items-end">
-        <div className="space-y-2">
-          <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Arquitectura Unificada</p>
-          <h2 className="text-4xl font-semibold tracking-tight">Ajustes del Sistema</h2>
-        </div>
-        <button onClick={() => setShowDebug(!showDebug)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${showDebug ? 'bg-[#5E7BFF] border-[#5E7BFF] text-white' : 'bg-[#151823] border-[#1F2330] text-[#646B7B]'}`}>
-          <Activity size={16} />
-          <span className="text-[10px] font-bold uppercase tracking-widest tracking-tighter">Diagnóstico</span>
-        </button>
+      <header className="space-y-2">
+        <p className="text-[#A0A6B1] text-sm uppercase tracking-widest font-bold">Configuración de Origen</p>
+        <h2 className="text-4xl font-semibold tracking-tight">Ajustes del Sistema</h2>
       </header>
-
-      {/* API KEY SECTION */}
-      <section className="p-10 rounded-[3rem] bg-gradient-to-br from-[#1A1E2E] to-[#0B0D12] border border-[#5E7BFF]/30 space-y-6 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-5"><Key size={120} className="text-[#5E7BFF]" /></div>
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-colors ${isKeyLinked ? 'bg-[#10B981] shadow-[#10B98144]' : 'bg-[#5E7BFF] shadow-[#5E7BFF44]'}`}>
-              {isKeyLinked ? <CheckCircle2 className="text-white" size={28} /> : <Key className="text-white" size={28} />}
-            </div>
-            <div>
-              <h3 className="text-xl font-bold">{isKeyLinked ? 'Llave Inteligente Activa' : 'Vincular Cerebro Gemini'}</h3>
-              <p className="text-[#A0A6B1] text-xs">Se requiere un proyecto de Google Cloud con facturación.</p>
-            </div>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            <button onClick={handleOpenKeySelector} className={`px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all shadow-xl ${isKeyLinked ? 'bg-white/10 text-white border border-white/20' : 'bg-[#5E7BFF] text-white hover:scale-105'}`}>
-              {isKeyLinked ? 'Cambiar API KEY' : 'Vincular Ahora'}
-            </button>
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[9px] text-[#5E7BFF] font-bold uppercase tracking-widest flex items-center gap-1 mx-auto hover:underline">
-              Docs Facturación <ExternalLink size={10} />
-            </a>
-          </div>
-        </div>
-      </section>
 
       <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-8">
         <div className="flex flex-col md:flex-row justify-between items-start gap-8">
@@ -197,7 +136,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
               </div>
               <div>
                 <h3 className="text-xl font-medium">Cuenta de Google Drive</h3>
-                <p className="text-[#646B7B] text-sm italic">Gestión centralizada de memorias y finanzas.</p>
+                <p className="text-[#646B7B] text-sm italic">Gestión centralizada de memorias.</p>
               </div>
             </div>
             {config.isConnected && (
@@ -223,42 +162,32 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
       {config.isConnected && (
         <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-10">
           <div className="space-y-2">
-            <h3 className="text-xl font-medium">Estado del Índice Único</h3>
-            <p className="text-[#646B7B] text-sm italic">Verificación de la estructura de datos en tu Google Sheets.</p>
+            <h3 className="text-xl font-medium">Salud del Índice Digital</h3>
+            <p className="text-[#646B7B] text-sm italic">Estado de tus archivos maestros en la nube.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
              <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-4">
-                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
-                  <Database size={16} className="text-[#8A6CFF]" />
-                  <h4>Archivo</h4>
+                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-[#8A6CFF]">
+                  <Database size={16} /> <h4>Archivo</h4>
                 </div>
-                {indexStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold uppercase flex items-center gap-2"><CheckCircle2 size={14} /> Detectado</div> : <div className="text-red-400 text-[10px] font-bold uppercase flex items-center gap-2"><AlertCircle size={14} /> No encontrado</div>}
+                {indexStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold flex items-center gap-2"><CheckCircle2 size={14} /> Detectado</div> : <div className="text-red-400 text-[10px] font-bold flex items-center gap-2"><AlertCircle size={14} /> No encontrado</div>}
              </div>
 
              <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-4">
-                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
-                  <Wallet size={16} className="text-[#10B981]" />
-                  <h4>Finanzas</h4>
+                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-[#10B981]">
+                  <Wallet size={16} /> <h4>Finanzas</h4>
                 </div>
-                {financeStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold uppercase flex items-center gap-2"><CheckCircle2 size={14} /> Pestañas OK</div> : <div className="text-amber-400 text-[10px] font-bold uppercase flex items-center gap-2"><AlertCircle size={14} /> Faltan hojas</div>}
+                {financeStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold flex items-center gap-2"><CheckCircle2 size={14} /> OK</div> : <div className="text-amber-400 text-[10px] font-bold flex items-center gap-2"><AlertCircle size={14} /> Incompleto</div>}
              </div>
 
              <div className="p-8 rounded-[2rem] bg-[#0B0D12] border border-[#1F2330] space-y-4">
-                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest">
-                  <Sparkles size={16} className="text-[#5E7BFF]" />
-                  <h4>Logs / Memoria</h4>
+                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-[#5E7BFF]">
+                  <Sparkles size={16} /> <h4>Memorias</h4>
                 </div>
-                {logsStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold uppercase flex items-center gap-2"><CheckCircle2 size={14} /> Pestañas OK</div> : <div className="text-amber-400 text-[10px] font-bold uppercase flex items-center gap-2"><AlertCircle size={14} /> Faltan hojas</div>}
+                {logsStatus === 'found' ? <div className="text-[#10B981] text-[10px] font-bold flex items-center gap-2"><CheckCircle2 size={14} /> OK</div> : <div className="text-amber-400 text-[10px] font-bold flex items-center gap-2"><AlertCircle size={14} /> Incompleto</div>}
              </div>
           </div>
-
-          {missingTabs.length > 0 && (
-            <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-2">
-              <p className="text-xs font-bold text-amber-500 uppercase tracking-widest">Atención: Faltan estas pestañas en tu Excel:</p>
-              <p className="text-[11px] text-[#A0A6B1] font-mono">{missingTabs.join(', ')}</p>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#1F2330]">
              <button onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }} className="p-6 rounded-2xl border bg-[#151823] border-[#1F2330] text-left flex justify-between items-center transition-all hover:border-[#5E7BFF]">
