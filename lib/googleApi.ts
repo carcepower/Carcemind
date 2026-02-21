@@ -4,8 +4,11 @@ import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
   getApiKey() {
-    // Guidelines: The API key must be obtained exclusively from process.env.API_KEY.
-    return process.env.API_KEY || null;
+    const env = (import.meta as any).env;
+    const proc = (process as any).env;
+    const key = env?.VITE_API_KEY || proc?.VITE_API_KEY || proc?.API_KEY;
+    if (!key || key === 'undefined') return null;
+    return key;
   },
 
   // Función para llamar a Gemini con reintentos automáticos si hay saturación (Error 429)
@@ -13,14 +16,12 @@ export const googleApi = {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
+    const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
     const maxRetries = 2;
 
     const execute = async (): Promise<any> => {
       try {
-        // Guidelines: Use process.env.API_KEY directly when initializing.
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        
         const config: any = { 
           model: 'gemini-3-flash-preview',
           config: { 
@@ -127,21 +128,6 @@ export const googleApi = {
     const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}!A:Z`, token);
     const data = await response.json();
     return data.values || [];
-  },
-
-  // Added: Fetches spreadsheet metadata (used in SettingsView.tsx)
-  async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
-    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
-    return await response.json();
-  },
-
-  // Added: Creates multiple sheet tabs via batchUpdate (used in SettingsView.tsx)
-  async createSheetTabs(spreadsheetId: string, tabs: string[], token: string) {
-    const requests = tabs.map(tab => ({ addSheet: { properties: { title: tab } } }));
-    await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, token, {
-      method: 'POST',
-      body: JSON.stringify({ requests })
-    });
   },
 
   async deleteRowById(spreadsheetId: string, sheetName: string, id: string, token: string) {
