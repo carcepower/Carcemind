@@ -1,9 +1,12 @@
 
-
 import { GoogleConfig, Memory, Task } from '../types';
 import { GoogleGenAI } from '@google/genai';
 
 export const googleApi = {
+  /**
+   * Obtiene la clave de API priorizando el entorno de Vite.
+   * No eliminar los fallbacks de import.meta.env para evitar errores en el frontend.
+   */
   getApiKey() {
     const env = (import.meta as any).env;
     const proc = (process as any).env;
@@ -12,8 +15,11 @@ export const googleApi = {
     return key;
   },
 
-  // Función para llamar a Gemini con reintentos automáticos si hay saturación (Error 429)
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob }) {
+  /**
+   * Llama a Gemini con gestión de modelos y reintentos.
+   * Compatible con parámetros de audio y selección de modelo Pro/Flash.
+   */
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
@@ -23,8 +29,11 @@ export const googleApi = {
 
     const execute = async (): Promise<any> => {
       try {
+        // Seleccionamos el modelo según la complejidad requerida
+        const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+
         const config: any = { 
-          model: 'gemini-3-flash-preview',
+          model: modelName,
           config: { 
             temperature: 0.7,
             ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
@@ -45,11 +54,10 @@ export const googleApi = {
         }
 
         const result = await ai.models.generateContent({ ...config, contents });
-        return result;
+        return result; // Las vistas acceden a result.text (propiedad)
       } catch (error: any) {
         if (error.message?.includes('429') && retries < maxRetries) {
           retries++;
-          // Esperamos 3 segundos antes de reintentar
           await new Promise(resolve => setTimeout(resolve, 3000));
           return execute();
         }
@@ -91,6 +99,14 @@ export const googleApi = {
     formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     formData.append('file', blob);
     const response = await this.fetchWithAuth('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', token, { method: 'POST', body: formData });
+    return await response.json();
+  },
+
+  /**
+   * Obtiene los metadatos de una hoja de cálculo para verificar pestañas.
+   */
+  async getSpreadsheetMetadata(spreadsheetId: string, token: string) {
+    const response = await this.fetchWithAuth(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, token);
     return await response.json();
   },
 
