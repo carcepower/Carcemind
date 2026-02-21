@@ -8,9 +8,7 @@ export enum ViewType {
   REMINDERS = 'REMINDERS',
   SETTINGS = 'SETTINGS',
   INSTRUCTIONS = 'INSTRUCTIONS',
-  MAIL = 'MAIL',
-  BANK = 'BANK',
-  TEST = 'TEST'
+  MAIL = 'MAIL'
 }
 
 export interface GoogleConfig {
@@ -47,16 +45,6 @@ export interface Memory {
   snippets?: string[];
   type: 'voice' | 'text';
   content?: string;
-}
-
-export interface BankTransaction {
-  id: string;
-  date: string;
-  concept: string;
-  amount: number;
-  balance: number;
-  bank: 'Sabadell' | 'Caixabank';
-  category: 'Empresa' | 'Personal';
 }
 
 export interface Task {

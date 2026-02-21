@@ -1,8 +1,9 @@
 
+import React, { useState } from 'react';
 import { GmailConfig, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
+import { GoogleGenAI } from '@google/genai';
 import { Mail, Search, Loader2, ExternalLink, AlertCircle, LogOut, Sparkles, ArrowRight, Circle } from 'lucide-react';
-import React, { useState } from 'react';
 
 interface CarceMailViewProps { 
   config: GmailConfig; 
@@ -58,47 +59,36 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
   };
 
   const handleSearch = async () => {
-    const currentPrompt = prompt.trim();
-    if (!currentPrompt || isSearching) return;
-    
-    setIsSearching(true); 
-    setError(null);
-    setPrompt(''); 
-
+    if (!prompt.trim() || isSearching) return;
+    setIsSearching(true); setError(null);
     try {
-      const extraction = await googleApi.safeAiCall({
-        prompt: `Genera términos de búsqueda para Gmail que resuelvan esto: "${currentPrompt}"`,
-        systemInstruction: "Devuelve solo términos clave de búsqueda de Gmail."
-      });
-
-      const searchTerms = extraction.text?.trim() || currentPrompt;
-      const messages = await googleApi.searchGmail(config.accessToken!, searchTerms, 5);
+      const apiKey = googleApi.getApiKey();
+      if (!apiKey) throw new Error("VITE_API_KEY no detectada.");
+      const ai = new GoogleGenAI({ apiKey });
+      const extraction = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Extract search query from: "${prompt}". Just the query.` });
+      const messages = await googleApi.searchGmail(config.accessToken!, extraction.text.trim(), 5);
       
-      if (!messages || messages.length === 0) {
-        setHistory(prev => [{ prompt: currentPrompt, answer: "Pablo, no he encontrado correos relevantes.", results: [] }, ...prev]);
+      if (messages.length === 0) {
+        const noResults = { prompt, answer: "No se encontraron correos relevantes.", results: [] };
+        setHistory(prev => [noResults, ...prev]);
+        setIsSearching(false);
         return;
       }
 
       const detailed = await Promise.all(messages.map((m: any) => googleApi.getGmailMessage(config.accessToken!, m.id)));
-      const snippets = detailed.map(m => `Asunto: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value || 'Sin asunto'} | Resumen: ${m.snippet}`).join('\n');
+      const snippets = detailed.map(m => `Subj: ${m.payload.headers.find((h: any) => h.name === 'Subject')?.value} | Body: ${m.snippet}`).join('\n');
+      const answer = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Answer based on these emails:\n${snippets}\nUser asks: "${prompt}". BE FRIENDLY, USE PARAGRAPHS, REMOVE ASTERISKS.` });
       
-      const response = await googleApi.safeAiCall({
-        prompt: `Basado en estos correos:\n${snippets}\n\nResponde a: "${currentPrompt}"`,
-        systemInstruction: "Analista de CarceMail. Responde de forma directa y ejecutiva.",
-        usePro: true
-      });
-      
-      const answerText = response.text || "Análisis no disponible.";
-      setHistory(prev => [{ prompt: currentPrompt, answer: answerText, results: detailed }, ...prev]);
+      const newInteraction = { prompt, answer: answer.text, results: detailed };
+      setHistory(prev => [newInteraction, ...prev]);
+      setPrompt('');
 
+      // Sincronizar con el Spreadsheet Log
       if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), "AI", answerText, searchTerms], googleConfig.accessToken);
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'MAIL_LOG', [Date.now().toString(), new Date().toISOString(), prompt, answer.text, JSON.stringify(detailed.slice(0, 3))], googleConfig.accessToken);
       }
-    } catch (err: any) { 
-      setError("Error al analizar la bandeja de entrada."); 
-    } finally { 
-      setIsSearching(false); 
-    }
+
+    } catch (err: any) { setError(err.message || "Error IA."); } finally { setIsSearching(false); }
   };
 
   if (!config.isConnected) return (
@@ -112,7 +102,7 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
     <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in pb-32">
       <header className="flex justify-between items-end">
         <div className="space-y-2">
-          <p className="text-[#5E7BFF] text-xs font-bold uppercase tracking-widest">Consultor de Emails</p>
+          <p className="text-[#5E7BFF] text-xs font-bold uppercase tracking-widest">Consultor Inteligente</p>
           <h2 className="text-4xl font-semibold tracking-tight">CarceMail Inbox</h2>
         </div>
         <button onClick={() => setConfig({ isConnected: false, email: null, accessToken: null })} className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:text-red-400"><LogOut size={14} /> Desconectar</button>
@@ -120,25 +110,39 @@ const CarceMailView: React.FC<CarceMailViewProps> = ({ config, setConfig, histor
 
       <div className="relative glass border border-[#1F2330] rounded-[2.5rem] p-8 flex items-center gap-6 shadow-2xl">
         <Search className="text-[#646B7B]" />
-        <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Pablo, ¿qué buscamos en tus correos?" className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
-        <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">
-          {isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}
-        </button>
+        <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Pregúntame sobre tus correos..." className="flex-1 bg-transparent outline-none text-xl placeholder:text-[#646B7B]" />
+        <button onClick={handleSearch} disabled={isSearching || !prompt.trim()} className="p-5 bg-[#5E7BFF] text-white rounded-3xl hover:bg-[#4A63CC] transition-all disabled:opacity-50">{isSearching ? <Loader2 className="animate-spin" /> : <ArrowRight />}</button>
       </div>
+
+      {error && <div className="p-8 rounded-3xl bg-red-500/5 border border-red-500/20 text-red-400 flex items-center gap-4"><AlertCircle size={20} /> <p className="text-sm">{error}</p></div>}
 
       <div className="space-y-16">
         {history.map((interaction, i) => (
           <div key={i} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-            <div className="flex justify-end"><div className="bg-[#151823] border border-[#1F2330] p-6 rounded-[2rem] max-w-[80%] text-right italic text-[#A0A6B1]">"{interaction.prompt}"</div></div>
+            <div className="flex justify-end">
+              <div className="bg-[#151823] border border-[#1F2330] p-6 rounded-[2rem] max-w-[80%] text-right italic text-[#A0A6B1]">"{interaction.prompt}"</div>
+            </div>
+            
             <div className="p-12 rounded-[3rem] bg-[#151823] border border-[#1F2330] space-y-6 shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10"><Sparkles size={100} className="text-[#5E7BFF]" /></div>
-              <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Análisis de CarceMail</h4></div>
+              <div className="flex items-center gap-3 text-[#5E7BFF]"><Sparkles size={20} /><h4 className="font-bold text-[10px] uppercase tracking-widest">Resumen de CarceMail</h4></div>
               <FormattedResponse text={interaction.answer} />
+              
+              {interaction.results.length > 0 && (
+                <div className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {interaction.results.slice(0, 2).map((msg, idx) => (
+                    <div key={idx} className="bg-black/20 border border-white/5 p-6 rounded-2xl space-y-2">
+                      <h6 className="font-semibold text-sm truncate">{msg.payload.headers.find((h: any) => h.name === 'Subject')?.value}</h6>
+                      <p className="text-[10px] text-[#646B7B] line-clamp-2 leading-relaxed">{msg.snippet}</p>
+                      <button onClick={() => window.open(`https://mail.google.com/mail/u/0/#inbox/${msg.id}`, '_blank')} className="text-[9px] font-bold text-[#5E7BFF] uppercase tracking-widest pt-2 flex items-center gap-1">Ver Correo <ExternalLink size={10} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
-      {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-3"><AlertCircle size={16} /> {error}</div>}
     </div>
   );
 };

@@ -2,14 +2,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Memory, Message, GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
-import { Send, Sparkles, User, BrainCircuit, Loader2, Trash2, AlertCircle } from 'lucide-react';
+import { Send, Sparkles, User, BrainCircuit, Loader2 } from 'lucide-react';
 
 interface ChatViewProps {
   memories: Memory[];
   googleConfig: GoogleConfig;
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  bankData?: any[];
 }
 
 const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
@@ -37,7 +36,7 @@ const FormattedResponse: React.FC<{ text: string }> = ({ text }) => {
 
 const formatBold = (text: string) => text.replace(/\*\*(.*?)\*\*/g, '<b class="text-white font-semibold">$1</b>');
 
-const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, setMessages, bankData = [] }) => {
+const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, setMessages }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,12 +53,6 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     }
   };
 
-  const handleReset = () => {
-    if (window.confirm("¿Limpiar historial de la conversación?")) {
-      setMessages([{ id: 'init', role: 'assistant', text: 'Historial visual reseteado. Sigo conectado a tu archivo maestro CarceMind_Memory_Index, Pablo.', timestamp: new Date() }]);
-    }
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: input, timestamp: new Date() };
@@ -70,30 +63,24 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     saveToCloud(userMsg);
 
     try {
-      const memoryContext = memories.slice(0, 50).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      const bankContext = bankData.slice(-100).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
-      
-      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional e impecable. Responde basándote en su historial de memorias y finanzas.`;
+      const memoryContext = memories.map(m => `- ${m.timestamp.toLocaleDateString()}: [${m.title}] ${m.excerpt}`).join('\n');
+      const systemInstruction = `Eres el "Consultor Cognitivo" de CarceMind. Ayuda a Pablo. Tono amigable y conciso. Contexto: ${memoryContext}`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
-        systemInstruction: systemInstruction + `\n\nMEMORIAS:\n${memoryContext}\n\nFINANZAS:\n${bankContext}`,
-        usePro: true 
+        systemInstruction
       });
 
-      const aiMsg: Message = { 
-        id: (Date.now() + 1).toString(), 
-        role: 'assistant', 
-        text: response.text || 'No he podido procesar esa consulta.', 
-        timestamp: new Date() 
-      };
+      const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', text: response.text || 'Sin respuesta.', timestamp: new Date() };
       setMessages(prev => [...prev, aiMsg]);
+      
       saveToCloud(aiMsg);
     } catch (err: any) {
-      const errorText = err.message === "API_KEY_MISSING" 
-        ? "Pablo, no detecto una clave de IA activa. Por favor, ve a la pestaña AJUSTES y pulsa 'Gestionar Clave de Google AI'."
-        : "Lo siento Pablo, he tenido un problema al consultar tu archivo maestro.";
-        
+      const isQuotaError = err.message?.includes('429');
+      const errorText = isQuotaError 
+        ? "El servidor está algo saturado ahora mismo. Por favor, espera 15 segundos y vuelve a intentarlo." 
+        : "Lo siento, ha habido un error técnico. ¿Podrías repetir la pregunta?";
+      
       setMessages(prev => [...prev, { id: 'err', role: 'assistant', text: errorText, timestamp: new Date() }]);
     } finally {
       setIsTyping(false);
@@ -102,28 +89,23 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
 
   return (
     <div className="max-w-4xl mx-auto h-[calc(100vh-160px)] flex flex-col">
-      <header className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center shadow-lg shadow-[#5E7BFF33]">
-            <BrainCircuit className="text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Inteligencia de Memoria Pro</p>
-          </div>
+      <header className="flex items-center gap-4 mb-8">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#5E7BFF] to-[#8A6CFF] flex items-center justify-center shadow-lg shadow-[#5E7BFF33]">
+          <BrainCircuit className="text-white" />
         </div>
-        <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">
-          <Trash2 size={18} className="group-hover:scale-110" />
-        </button>
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
+          <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest tracking-tighter">Historial Persistente Activo</p>
+        </div>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-10 pr-4 scrollbar-hide">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-5 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${msg.role === 'user' ? 'bg-[#151823] border-[#1F2330]' : msg.id === 'err' ? 'bg-red-500/20 border-red-500/30' : 'bg-[#5E7BFF] border-[#5E7BFF] shadow-lg shadow-[#5E7BFF33]'}`}>
-              {msg.role === 'user' ? <User size={18} /> : msg.id === 'err' ? <AlertCircle size={18} className="text-red-400" /> : <Sparkles size={18} />}
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${msg.role === 'user' ? 'bg-[#151823] border-[#1F2330]' : 'bg-[#5E7BFF] border-[#5E7BFF] shadow-lg shadow-[#5E7BFF33]'}`}>
+              {msg.role === 'user' ? <User size={18} /> : <Sparkles size={18} />}
             </div>
-            <div className={`p-6 rounded-[2rem] max-w-[85%] flex flex-col gap-4 ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : 'bg-white/5 border border-white/5'}`}>
+            <div className={`p-6 rounded-[2rem] max-w-[85%] ${msg.role === 'user' ? 'bg-[#151823] border border-[#1F2330]' : 'bg-white/5 border border-white/5'}`}>
               {msg.role === 'assistant' ? <FormattedResponse text={msg.text} /> : <p className="text-sm leading-relaxed">{msg.text}</p>}
             </div>
           </div>
@@ -141,8 +123,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
       </div>
 
       <div className="mt-10 relative">
-        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Pablo, ¿en qué profundizamos hoy?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm pr-16 shadow-2xl" />
-        <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-xl"><Send size={20} /></button>
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Dime Pablo, ¿qué quieres recordar?" className="w-full glass border border-[#1F2330] rounded-3xl py-6 px-8 outline-none focus:border-[#5E7BFF] transition-all text-sm" />
+        <button onClick={handleSend} disabled={isTyping || !input.trim()} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white text-black rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all"><Send size={20} /></button>
       </div>
     </div>
   );
