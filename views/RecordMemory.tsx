@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
+import { GoogleGenAI, Type } from '@google/genai';
 import { Mic, Square, Loader2, CheckCircle2, AlertCircle, BrainCircuit } from 'lucide-react';
 
 interface RecordMemoryProps {
@@ -17,6 +18,12 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const getApiKey = () => {
+    return (import.meta as any).env?.VITE_API_KEY || 
+           (process.env as any)?.VITE_API_KEY || 
+           process.env.API_KEY;
+  };
 
   const startRecording = async () => {
     if (!googleConfig.isConnected) {
@@ -59,31 +66,41 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
       const driveFile = await googleApi.uploadFile(googleConfig.accessToken!, blob, `Memory_${Date.now()}.webm`, googleConfig.audioFolderId!);
       
       setStatus('processing');
+      const apiKey = getApiKey();
       
+      if (!apiKey) {
+        throw new Error("VITE_API_KEY no encontrada.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const base64Audio = await new Promise<string>(r => {
+        const reader = new FileReader();
+        reader.onloadend = () => r((reader.result as string).split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+
       const prompt = `
-        Analiza este audio y genera un JSON estrictamente válido con este formato:
+        Analiza este audio y genera un JSON estrictamente válido:
         {
           "title": "título corto",
           "summary": "resumen ejecutivo",
           "emotionalState": "estado de ánimo",
           "tags": ["tag1", "tag2"],
           "snippets": ["frase clave 1"],
+          "fullTranscript": "Transcripción íntegra palabra por palabra del audio",
           "tasks": [
             {"title": "descripción de la tarea", "priority": "low|medium|high", "daysToDeadline": 1}
           ]
         }
       `;
 
-      const result = await googleApi.safeAiCall({
-        prompt,
-        isAudio: true,
-        audioBlob: blob
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: prompt }] }],
+        config: { responseMimeType: 'application/json' }
       });
 
-      // Limpiamos el JSON por si Gemini añade Markdown
-      const cleanJson = googleApi.cleanJsonResponse(result.text || "{}");
-      const data = JSON.parse(cleanJson);
-      
+      const data = JSON.parse(result.text);
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
@@ -96,7 +113,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         data.tags?.join(', '), 
         driveFile.id, 
         driveFile.webViewLink, 
-        data.snippets?.join(' | ')
+        data.snippets?.join(' | '),
+        data.fullTranscript
       ], googleConfig.accessToken!);
 
       if (data.tasks && data.tasks.length > 0) {
@@ -109,9 +127,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
             new Date().toISOString(),
             task.title,
             task.priority || 'medium',
-            'pendiente', 
+            'pendiente', // Usar español para consistencia
             entryId,
-            deadlineDate.toISOString()
+            deadlineDate.toISOString(),
+            '' // Columna FECHA_COMPLETADA vacía inicialmente
           ], googleConfig.accessToken!);
         }
       }
@@ -122,16 +141,13 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         title: data.title, 
         excerpt: data.summary, 
         timestamp: new Date(), 
-        type: 'voice'
+        type: 'voice',
+        content: data.fullTranscript 
       });
     } catch (err: any) {
       console.error(err);
       setStatus('error');
-      if (err.message === "API_KEY_MISSING") {
-        setErrorMessage("Falta configurar la clave de IA en Ajustes.");
-      } else {
-        setErrorMessage(err.message || "Error al procesar el audio.");
-      }
+      setErrorMessage(err.message || 'Error en el procesamiento neuronal.');
     }
   };
 
@@ -139,7 +155,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
     <div className="max-w-4xl mx-auto h-full flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-500">
       <div className="text-center space-y-4">
         <h2 className="text-4xl font-semibold tracking-tight">Ingesta Cognitiva</h2>
-        <p className="text-[#A0A6B1]">Graba tus pensamientos; CarceMind se encargará de estructurarlos.</p>
+        <p className="text-[#A0A6B1]">Tu voz se procesa y se extrae la transcripción completa.</p>
       </div>
 
       <button
@@ -153,15 +169,9 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Atención' : status.toUpperCase() + '...'}
+            {status === 'finished' ? '¡Memoria y Transcripción Guardadas!' : status === 'error' ? 'Error' : status + '...'}
           </p>
-          {status === 'error' && (
-            <div className="flex flex-col items-center gap-2 mt-2">
-              <AlertCircle className="text-red-400 w-5 h-5" />
-              <p className="text-[#A0A6B1] text-xs leading-relaxed">{errorMessage}</p>
-              <button onClick={() => setStatus('idle')} className="mt-4 text-[10px] font-bold uppercase tracking-widest text-[#5E7BFF]">Entendido</button>
-            </div>
-          )}
+          {status === 'error' && <p className="text-red-400 mt-2 text-xs">{errorMessage}</p>}
         </div>
       )}
     </div>
