@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Memory, Task } from '../types';
 import { TrendingUp, CheckCircle, Database, Calendar, RefreshCw } from 'lucide-react';
