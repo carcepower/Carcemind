@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
@@ -81,7 +80,10 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         audioBlob: blob
       });
 
-      const data = JSON.parse(result.text);
+      // Use the cleanJsonResponse helper to avoid common JSON parsing errors with LLMs
+      const cleanJson = googleApi.cleanJsonResponse(result.text || "{}");
+      const data = JSON.parse(cleanJson);
+      
       setStatus('structuring');
       const entryId = crypto.randomUUID();
       
@@ -133,6 +135,8 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         setErrorMessage("Límite de cuota excedido. Por favor, espera un minuto antes de volver a grabar.");
       } else if (err.message?.includes('403')) {
         setErrorMessage("Error de permisos (403). Verifica que la API de Google Cloud esté activa.");
+      } else if (err.message === "API_KEY_MISSING") {
+        setErrorMessage("Falta configurar la clave de IA en Ajustes.");
       } else {
         setErrorMessage("Ha ocurrido un error al procesar el audio. Inténtalo de nuevo en unos instantes.");
       }
@@ -157,7 +161,7 @@ const RecordMemory: React.FC<RecordMemoryProps> = ({ onMemoryAdded, googleConfig
         <div className="glass p-8 rounded-3xl border border-[#1F2330] w-full max-w-md text-center">
           {['uploading', 'processing', 'structuring'].includes(status) && <Loader2 className="animate-spin mx-auto mb-4 text-[#5E7BFF]" />}
           <p className="font-bold uppercase tracking-widest text-sm">
-            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Atención' : status + '...'}
+            {status === 'finished' ? '¡Memoria Guardada!' : status === 'error' ? 'Atención' : status.toUpperCase() + '...'}
           </p>
           {status === 'error' && (
             <div className="flex flex-col items-center gap-2 mt-2">

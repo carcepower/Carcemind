@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewType } from '../types';
 import { 
@@ -10,7 +9,9 @@ import {
   Settings,
   BrainCircuit,
   BookOpen,
-  Mail
+  Mail,
+  Wallet,
+  FlaskConical
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,18 +25,20 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
     { id: ViewType.DASHBOARD, label: 'CUADRO DE MANDO', icon: LayoutDashboard },
     { id: ViewType.RECORD, label: 'GRABAR', icon: Mic },
     { id: ViewType.CHAT, label: 'CONSULTOR', icon: MessageSquare },
+    { id: ViewType.BANK, label: 'FINANZAS', icon: Wallet },
     { id: ViewType.MAIL, label: 'CARCEMAIL', icon: Mail },
     { id: ViewType.TASKS, label: 'TAREAS', icon: CheckSquare },
     { id: ViewType.MEMORIES, label: 'CRONOLOGÍA', icon: History },
     { id: ViewType.INSTRUCTIONS, label: 'INSTRUCCIONES', icon: BookOpen },
     { id: ViewType.SETTINGS, label: 'AJUSTES', icon: Settings },
+    { id: ViewType.TEST, label: 'PRUEBA DE IA', icon: FlaskConical },
   ];
 
   const mobileBottomItems = [
     { id: ViewType.DASHBOARD, icon: LayoutDashboard },
     { id: ViewType.RECORD, icon: Mic },
-    { id: ViewType.MAIL, icon: Mail },
-    { id: ViewType.TASKS, icon: CheckSquare },
+    { id: ViewType.CHAT, icon: MessageSquare },
+    { id: ViewType.TEST, icon: FlaskConical },
     { id: ViewType.SETTINGS, icon: Settings },
   ];
 
@@ -77,7 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isMobileMen
 
         <div className="p-6 border-t border-[#1F2330] mt-auto shrink-0 md:block hidden">
           <div className="flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-[#646B7B] uppercase tracking-widest">
-            Cognición v1.6
+            Cognición v1.6.1
           </div>
         </div>
       </aside>
