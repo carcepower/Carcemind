@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleConfig } from '../types';
 import { googleApi } from '../lib/googleApi';
 import { 
-  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Sparkles
+  Chrome, FolderOpen, RefreshCw, AlertCircle, LogOut, CheckCircle2, FileSpreadsheet, Activity, Database, Wallet, Sparkles, ExternalLink
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -126,6 +126,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
     setActiveFolderSelector(null);
   };
 
+  const handleOpenFile = () => {
+    if (config.spreadsheetId) {
+      window.open(`https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit`, '_blank');
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-12 pb-32 animate-in fade-in duration-700">
       <header className="flex justify-between items-end">
@@ -173,9 +179,19 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
 
       {config.isConnected && (
         <section className="glass border border-[#1F2330] p-10 rounded-[3rem] space-y-10">
-          <div className="space-y-2">
-            <h3 className="text-xl font-medium">Estado del Índice Único</h3>
-            <p className="text-[#646B7B] text-sm italic">Verificación de la estructura de datos en tu Google Sheets.</p>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-2">
+              <h3 className="text-xl font-medium">Estado del Índice Único</h3>
+              <p className="text-[#646B7B] text-sm italic">Verificación de la estructura de datos en tu Google Sheets.</p>
+            </div>
+            {config.spreadsheetId && (
+              <button 
+                onClick={handleOpenFile}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-black text-[10px] font-bold uppercase tracking-widest shadow-lg hover:scale-105 transition-all"
+              >
+                <ExternalLink size={14} /> Abrir Archivo Maestro
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -212,18 +228,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ config, setConfig }) => {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#1F2330]">
-             <button onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }} className="p-6 rounded-2xl border bg-[#151823] border-[#1F2330] text-left flex justify-between items-center transition-all hover:border-[#5E7BFF]">
-                <div className="flex items-center gap-3">
-                  <FolderOpen size={18} className="text-[#646B7B]" />
-                  <span className="truncate text-sm">{config.audioFolderName || 'Carpeta Audios'}</span>
-                </div>
-             </button>
-             <button onClick={() => { loadFolders(); setActiveFolderSelector('sheet'); }} className="p-6 rounded-2xl border bg-[#151823] border-[#1F2330] text-left flex justify-between items-center transition-all hover:border-[#5E7BFF]">
-                <div className="flex items-center gap-3">
-                  <FileSpreadsheet size={18} className="text-[#646B7B]" />
-                  <span className="truncate text-sm">{config.sheetFolderName || 'Carpeta Índice'}</span>
-                </div>
-             </button>
+             <div className="space-y-3">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-[#646B7B] ml-2">Carpeta de Audios</label>
+               <button onClick={() => { loadFolders(); setActiveFolderSelector('audio'); }} className="w-full p-6 rounded-2xl border bg-[#151823] border-[#1F2330] text-left flex justify-between items-center transition-all hover:border-[#5E7BFF]">
+                  <div className="flex items-center gap-3">
+                    <FolderOpen size={18} className="text-[#646B7B]" />
+                    <span className="truncate text-sm">{config.audioFolderName || 'Seleccionar...'}</span>
+                  </div>
+               </button>
+             </div>
+             <div className="space-y-3">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-[#646B7B] ml-2">Carpeta de Datos</label>
+               <button onClick={() => { loadFolders(); setActiveFolderSelector('sheet'); }} className="w-full p-6 rounded-2xl border bg-[#151823] border-[#1F2330] text-left flex justify-between items-center transition-all hover:border-[#5E7BFF]">
+                  <div className="flex items-center gap-3">
+                    <FileSpreadsheet size={18} className="text-[#646B7B]" />
+                    <span className="truncate text-sm">{config.sheetFolderName || 'Seleccionar...'}</span>
+                  </div>
+               </button>
+             </div>
           </div>
         </section>
       )}

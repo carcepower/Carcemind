@@ -49,7 +49,7 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
   const saveToCloud = async (msg: Message) => {
     if (googleConfig.isConnected && googleConfig.spreadsheetId && googleConfig.accessToken) {
       try {
-        await googleApi.appendRow(googleConfig.spreadsheetId, 'CHAT_LOG', [msg.id, msg.timestamp.toISOString(), msg.role, msg.text], googleConfig.accessToken);
+        await googleApi.appendRow(googleConfig.spreadsheetId, 'CHAT_LOG', [msg.id, msg.timestamp.toISOString(), msg.role, msg.text], googleConfig.accessToken).catch(() => null);
       } catch (e) { console.error("Cloud Chat Log Error:", e); }
     }
   };
@@ -72,24 +72,20 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
     try {
       // Contexto de memorias (30 últimas)
       const memoryContext = memories.slice(0, 30).map(m => `- [${new Date(m.timestamp).toLocaleDateString()}] ${m.title}: ${m.excerpt}`).join('\n');
-      
-      // Contexto de finanzas aumentado a 200 para no perder datos de meses anteriores
-      // bankData ya viene ordenado cronológicamente desde App.tsx
       const bankContext = bankData.slice(0, 200).map(t => `- ${t.date}: ${t.concept} | ${t.amount}€ (${t.type})`).join('\n');
       
-      const systemInstruction = `Eres el "Consultor Cognitivo" de Pablo Carcelén. Profesional, impecable y analítico.
+      const systemInstruction = `Eres el "Carcemind AI", el cerebro digital de Pablo Carcelén. Profesional, impecable y analítico.
       Tienes acceso a su historial de memorias y a sus movimientos bancarios.
       
       INSTRUCCIONES CRÍTICAS:
       1. Las fechas bancarias están en formato DD/MM/YYYY.
       2. Tienes datos de múltiples cuentas (Empresa TA, Personal Caixa).
-      3. Si Pablo pregunta por un mes específico (ej: Noviembre), analiza TODAS las líneas que coincidan con ese mes en el listado.
-      4. Si no encuentras algo, no digas que los datos "saltan", simplemente di que con la información actual no visualizas esos registros o sugiere que revise la sincronización.
-      5. Responde de forma ejecutiva.`;
+      3. Si Pablo pregunta por un mes específico, analiza TODAS las líneas del listado.
+      4. Responde de forma ejecutiva y elegante.`;
       
       const response = await googleApi.safeAiCall({
         prompt: input,
-        systemInstruction: systemInstruction + `\n\nMEMORIAS RECIENTES:\n${memoryContext}\n\nMOVIMIENTOS BANCARIOS (200 MÁS RECIENTES):\n${bankContext}`,
+        systemInstruction: systemInstruction + `\n\nMEMORIAS RECIENTES:\n${memoryContext}\n\nMOVIMIENTOS BANCARIOS:\n${bankContext}`,
         usePro: true 
       });
 
@@ -118,8 +114,8 @@ const ChatView: React.FC<ChatViewProps> = ({ memories, googleConfig, messages, s
             <BrainCircuit className="text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Consultor Cognitivo</h2>
-            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Acceso Maestro: Memoria e Inteligencia Financiera</p>
+            <h2 className="text-2xl font-semibold tracking-tight">Carcemind AI</h2>
+            <p className="text-[#646B7B] text-[10px] font-bold uppercase tracking-widest">Cognición e Inteligencia Financiera Unificada</p>
           </div>
         </div>
         <button onClick={handleReset} className="p-3 rounded-xl bg-[#151823] border border-[#1F2330] text-[#646B7B] hover:text-white transition-all group">

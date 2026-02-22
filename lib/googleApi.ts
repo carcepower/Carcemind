@@ -1,45 +1,33 @@
 
 import { GoogleConfig, Memory, Task } from '../types';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
 
 export const googleApi = {
   /**
-   * Obtiene la clave de API priorizando el entorno de Vite.
-   * No eliminar los fallbacks de import.meta.env para evitar errores en el frontend.
+   * Obtiene la clave de API exclusivamente de process.env.API_KEY.
    */
   getApiKey() {
-    const env = (import.meta as any).env;
-    const proc = (process as any).env;
-    const key = env?.VITE_API_KEY || proc?.VITE_API_KEY || proc?.API_KEY;
-    if (!key || key === 'undefined') return null;
-    return key;
+    return process.env.API_KEY;
   },
 
   /**
    * Llama a Gemini con gestión de modelos y reintentos.
    * Compatible con parámetros de audio y selección de modelo Pro/Flash.
    */
-  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }) {
-    const apiKey = this.getApiKey();
+  async safeAiCall(params: { prompt: string, systemInstruction?: string, isAudio?: boolean, audioBlob?: Blob, usePro?: boolean }): Promise<GenerateContentResponse> {
+    // Fixed: Exclusively use process.env.API_KEY string directly
+    const apiKey = process.env.API_KEY;
     if (!apiKey) throw new Error("API_KEY_MISSING");
     
+    // Fixed: Always use a named parameter when initializing GoogleGenAI
     const ai = new GoogleGenAI({ apiKey });
     let retries = 0;
     const maxRetries = 2;
 
-    const execute = async (): Promise<any> => {
+    const execute = async (): Promise<GenerateContentResponse> => {
       try {
-        // Seleccionamos el modelo según la complejidad requerida
+        // Seleccionamos el modelo según la complejidad requerida (Gemini 3 series)
         const modelName = params.usePro ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-
-        const config: any = { 
-          model: modelName,
-          config: { 
-            temperature: 0.7,
-            ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
-            ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
-          }
-        };
 
         let contents: any;
         if (params.isAudio && params.audioBlob) {
@@ -53,8 +41,18 @@ export const googleApi = {
           contents = params.prompt;
         }
 
-        const result = await ai.models.generateContent({ ...config, contents });
-        return result; // Las vistas acceden a result.text (propiedad)
+        // Fixed: Use ai.models.generateContent directly with model, contents and config
+        const response = await ai.models.generateContent({ 
+          model: modelName,
+          contents,
+          config: { 
+            temperature: 0.7,
+            ...(params.systemInstruction ? { systemInstruction: params.systemInstruction } : {}),
+            ...(params.isAudio ? { responseMimeType: 'application/json' } : {})
+          }
+        });
+        
+        return response; // Correctly access .text property later
       } catch (error: any) {
         if (error.message?.includes('429') && retries < maxRetries) {
           retries++;
